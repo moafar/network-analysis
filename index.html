@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Derivaciones - Red Interactiva</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .header-info {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        /* ===== CONFIG TOOLBAR ===== */
+        .config-toolbar {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 20px;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .file-name {
+            font-size: 14px;
+            opacity: 0.9;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            background: #f0f0f0;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* ===== MAIN CONTAINER ===== */
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* ===== CONFIG TOOLBAR ===== */
+        .config-toolbar {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 20px;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        select, input[type="text"] {
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            background: white;
+            color: #333;
+            cursor: pointer;
+        }
+
+        select:hover, input[type="text"]:hover {
+            border-color: #bbb;
+        }
+
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+        }
+
+        /* ===== MAIN CONTENT AREA ===== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+
+        /* ===== TABS ===== */
+        .tabs-header {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            background: #fafafa;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 16px;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab-btn:hover {
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        /* ===== TAB CONTENT ===== */
+        .tabs-content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            position: relative;
+        }
+
+        .tab-pane {
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tab-pane.active {
+            display: flex;
+        }
+
+        .tab-pane-toolbar {
+            flex-shrink: 0;
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 15px;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            overflow-y: auto;
+            max-height: 90px;
+        }
+
+        .tab-pane-content {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .tab-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            color: #999;
+            font-size: 16px;
+        }
+
+        /* ===== TOOLBAR GROUPS ===== */
+        .toolbar-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 120px;
+        }
+
+        .toolbar-group label {
+            font-weight: 500;
+            color: #555;
+            font-size: 11px;
+        }
+
+        .toolbar-group input[type="range"] {
+            width: 100%;
+            min-width: 120px;
+            height: 6px;
+        }
+
+        .toolbar-group input[type="text"],
+        .toolbar-group select {
+            padding: 5px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 100%;
+        }
+
+        .toolbar-stats {
+            padding: 0 8px;
+            color: #666;
+            align-self: flex-end;
+            white-space: nowrap;
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+
+        /* ===== VISUALIZATION CONTAINERS ===== */
+        .visualization-container {
+            width: 100%;
+            height: 100%;
+            background: #fafafa;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #sankey-container, #network-container, #ego-container {
+            width: 100%;
+            height: 100%;
+            background: white;
+        }
+
+        /* ===== VISUALIZATION TOOLBAR ===== */
+        .viz-toolbar {
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 20px;
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .viz-toolbar.hidden {
+            display: none;
+        }
+
+        /* ===== EGO NETWORKS GRID ===== */
+        .ego-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 15px;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ego-panel {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ego-header {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #fafafa;
+        }
+
+        .ego-header select {
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .ego-canvas {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ===== LOADING BAR ===== */
+        .loading-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            z-index: 10;
+            transition: width 0.3s ease;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+                max-height: 30vh;
+            }
+
+            .ego-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .header-info {
+                flex-direction: column;
+                width: 100%;
+            }
+        }
+
+        /* ===== UTILITY ===== */
+        .hidden {
+            display: none !important;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>Derivaciones - Red Interactiva</h1>
+        
+        <!-- Selectores de columnas EN EL HEADER -->
+        <div style="display: flex; gap: 15px; align-items: flex-end;">
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+                <label for="originCol" style="font-size: 10px; color: rgba(255,255,255,0.8);">Origen</label>
+                <select id="originCol" onchange="handleColumnChange()" style="padding: 5px 10px; font-size: 12px;">
+                    <option value="">-- Selecciona --</option>
+                </select>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+                <label for="destCol" style="font-size: 10px; color: rgba(255,255,255,0.8);">Destino</label>
+                <select id="destCol" onchange="handleColumnChange()" style="padding: 5px 10px; font-size: 12px;">
+                    <option value="">-- Selecciona --</option>
+                </select>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+                <label for="weightCol" style="font-size: 10px; color: rgba(255,255,255,0.8);">Peso</label>
+                <select id="weightCol" onchange="handleColumnChange()" style="padding: 5px 10px; font-size: 12px;">
+                    <option value="">-- Automático --</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="header-info">
+            <div id="statusMsg" style="font-size: 12px; color: rgba(255,255,255,0.9); max-width: 300px;"></div>
+            <span class="file-name" id="fileName">Archivo: (ninguno)</span>
+            <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none;">
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                Cargar Excel
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN CONTAINER (solo tabs) -->
+    <div class="container">
+        <!-- TABS HEADER -->
+        <div class="tabs-header">
+            <button class="tab-btn active" onclick="switchTab('sankey')">Sankey</button>
+            <button class="tab-btn" onclick="switchTab('network')">Red Gravitacional</button>
+            <button class="tab-btn" onclick="switchTab('ego')">Ego-Networks</button>
+        </div>
+
+        <!-- VISUALIZATION TOOLBAR (controles dinámicos) -->
+        <div id="viz-toolbar" class="viz-toolbar hidden">
+            <!-- Se rellena dinámicamente -->
+            <div id="configMsg" style="font-size: 12px; color: rgba(255,255,255,0.9); max-width: 300px;"></div>
+        </div>
+
+            <!-- TABS CONTENT -->
+            <div class="tabs-content">
+                <!-- TOOLBAR (compartida, aparece según la pestaña) -->
+                <div id="toolbar-container" style="position: absolute; top: 0; left: 0; right: 0; display: none; z-index: 5;"></div>
+
+                <!-- TAB: SANKEY -->
+                <div id="tab-sankey" class="tab-pane active">
+                    <div class="tab-pane-content">
+                        <div id="sankey-container" class="visualization-container"></div>
+                        <div id="sankeyStats" style="position: absolute; bottom: 10px; right: 10px; font-size: 12px; color: #666; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 3px;"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: NETWORK -->
+                <div id="tab-network" class="tab-pane">
+                    <div class="tab-pane-content">
+                        <div id="network-container" class="visualization-container"></div>
+                        <div id="networkStats" style="position: absolute; bottom: 10px; right: 10px; font-size: 12px; color: #666; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 3px;"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: EGO-NETWORKS -->
+                <div id="tab-ego" class="tab-pane">
+                    <div class="tab-pane-content">
+                        <div id="ego-container" class="ego-grid">
+                            <div class="ego-panel">
+                                <div class="ego-header">
+                                    <label for="ego1Dest">Ego-Network 1</label>
+                                    <select id="ego1Dest" onchange="updateEgoNetwork(1)">
+                                        <option value="">-- Selecciona destino --</option>
+                                    </select>
+                                </div>
+                                <div class="ego-canvas" id="ego1-canvas"></div>
+                            </div>
+
+                            <div class="ego-panel">
+                                <div class="ego-header">
+                                    <label for="ego2Dest">Ego-Network 2</label>
+                                    <select id="ego2Dest" onchange="updateEgoNetwork(2)">
+                                        <option value="">-- Selecciona destino --</option>
+                                    </select>
+                                </div>
+                                <div class="ego-canvas" id="ego2-canvas"></div>
+                            </div>
+
+                            <div class="ego-panel">
+                                <div class="ego-header">
+                                    <label for="ego3Dest">Ego-Network 3</label>
+                                    <select id="ego3Dest" onchange="updateEgoNetwork(3)">
+                                        <option value="">-- Selecciona destino --</option>
+                                    </select>
+                                </div>
+                                <div class="ego-canvas" id="ego3-canvas"></div>
+                            </div>
+
+                            <div class="ego-panel">
+                                <div class="ego-header">
+                                    <label for="ego4Dest">Ego-Network 4</label>
+                                    <select id="ego4Dest" onchange="updateEgoNetwork(4)">
+                                        <option value="">-- Selecciona destino --</option>
+                                    </select>
+                                </div>
+                                <div class="ego-canvas" id="ego4-canvas"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SCRIPTS ===== -->
+    <!-- XLSX Parser (lectura de Excel) - CDN alternativa más confiable -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <!-- D3 y D3-Sankey -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+
+    <!-- Vis-Network -->
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+    <!-- APP STATE & LOGIC -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+Eres un agente de desarrollo dentro de VS Code. Tu tarea es construir, de principio a fin, una aplicación web ligera (sin frameworks) basada en HTML + CSS + JavaScript que permita cargar un Excel y visualizar interacciones en red en tres pestañas: Sankey, red “gravitacional”, y 4 ego-networks en cuadrantes.
+
+RESTRICCIONES Y PRINCIPIOS
+- Stack: HTML + CSS + JS “vanilla”. Sin React/Vue/Angular.
+- Todo debe correr localmente en el navegador (sin backend).
+- Código legible, modular y comentado lo mínimo necesario.
+- Prioriza rendimiento (datasets medianos/grandes). Evita O(n^2) donde no aplique.
+- No rompas la UI si faltan columnas o hay valores nulos: muestra mensajes claros y evita crashes.
+- Diseña para que el usuario pueda iterar: arquitectura limpia, funciones separadas, y estado centralizado.
+- Usa librerías por CDN (sin bundlers) salvo que sea estrictamente necesario.
+
+ENTRADA (EXCEL)
+- El usuario cargará un archivo .xlsx.
+- El usuario podrá seleccionar la hoja a procesar.
+- Extrae:
+  - headers (nombres de columnas)
+  - rows (array de objetos por fila)
+- Validación mínima:
+  - Si no hay filas o no hay columnas: avisa y deshabilita visualizaciones.
+
+UI GENERAL (LAYOUT)
+1) Header / barra superior:
+   - Botón “Cargar Excel”
+   - Texto: “Archivo: <nombre>”
+2) Panel de configuración (siempre visible, pero prioriza el espacio para las visualizaciones):
+   - Select “Columna origen”
+   - Select “Columna destino”
+   - Regla: cada selector debe excluir la columna elegida en el otro (no permitir que sean iguales).
+   - Selector de columna de “peso”:
+     - Si el usuario elige una columna numérica, úsala como weight.
+3) Tabs (pestañas):
+   - Sankey
+   - Red
+   - Ego-networks (4 cuadrantes)
+4) Área principal que cambia según pestaña.
+
+PESTAÑA 1: SANKEY
+- Objetivo: diagrama Sankey que muestre flujos source -> target con grosor proporcional a value.
+- Controles:
+  - Slider “Top-N flujos” (p.ej. 10..500 con step 10; ajusta rango según tamaño del dataset).
+  - Etiqueta dinámica: “Mostrando Top N = X (de Y flujos agregados)”
+- Implementación:
+  - Usa D3 + d3-sankey por CDN.  Verifica siempre disponibilidad de la conexión a CDN y notifica al usuartio si falla.
+  - Debe recalcularse cuando cambie:
+    - originCol/destCol/weightCol
+    - N del slider
+- Comportamiento:
+  - Tooltips al pasar: source, target, value.
+  - Si N muy pequeño y deja nodos aislados: no importa; el Sankey se construye con lo visible.
+- Rendimiento:
+  - No reconstruyas todo si solo cambia N: reutiliza edges agregadas y filtra.
+- Filtros:
+  -Implementa filtrado de punto de origrn y de punto de destino (ej. solo mostrar flujos que tengan un origen o destino específico). Esto puede ser un select adicional o un input de texto para buscar nodos específicos.
+
+PESTAÑA 2: RED (INTERACCIÓN “GRAVITACIONAL”)
+- Objetivo: diagrama de red interactivo con física tipo barnesHut.
+- Librería recomendada: vis-network por CDN.
+- Debes basarte en el enfoque del archivo de referencia “derivaciones.html” (incluye opciones de física barnesHut + estabilización con loading bar). Toma como valores iniciales:
+  - barnesHut.avoidOverlap = 0
+  - barnesHut.centralGravity = 0.3
+  - barnesHut.damping = 0.4
+  - barnesHut.gravitationalConstant = -3000
+  - barnesHut.springConstant = 0.02
+  - barnesHut.springLength = 120
+  - stabilization.enabled = true, fit = true, iterations = 1000, updateInterval = 50
+  (Referencia: derivaciones.html) 
+- También replica la idea del “loadingBar” durante stabilización (puedes simplificar estilos, pero debe existir feedback visual). 
+- Visual encoding:
+  - Node size: proporcional al “in-strength” (suma value de aristas entrantes) o grado; elige uno y documenta.
+  - Edge width: proporcional a value.
+  - Tooltip en nodos: id/label + métrica (in-strength).
+  - Tooltip en aristas: value.
+- Interacción:
+  - zoom/pan
+  - drag nodes
+- Controles:
+  - Slider Top-N (igual idea que Sankey) para limitar aristas visibles y evitar saturación.
+
+PESTAÑA 3: EGO-NETWORKS (4 CUADRANTES)
+- Layout:
+  - Un grid 2x2 (cuatro paneles).
+  - Cada panel tiene:
+    - Select “Destino” (lista de nodos destino; idealmente todos los nodos únicos, o solo targets si quieres ser estricto).
+    - Botón (opcional) “Actualizar” o actualiza onChange.
+    - Un canvas/contendor vis-network independiente.
+- Comportamiento:
+  - Al elegir un destino D en un panel:
+    - Construye la ego-network de D (radius=1).
+    - D se destaca (color/tamaño).
+    - Vecinos directos visibles.
+    - Física habilitada (barnesHut), pero con parámetros que eviten explosión visual:
+      - Puedes partir de los mismos parámetros del grafo general y ajustar springLength un poco menor.
+- Optimización:
+  - Reusa edges agregadas globales.
+  - buildEgoNetwork debe ser O(m) en número de edges (idealmente filtrando con maps/índices).
+  - Mantén un índice:
+    - outIndex: Map[source] -> edges[]
+    - inIndex: Map[target] -> edges[]
+    para construir ego rápido.
+
+Haz una propuesta de archivos iniciales y su responsabilidad.
+Mantén todo simple: puedes empezar con 2-3 archivos y luego refactorizar a esto cuando funcione.
+
+Determina las librerías a usar y sus CDNs, asegurándote de que sean estables y ampliamente utilizadas. Por ejemplo:
+- D3.js: https://d3js.org/d3.v7.min.js
+- d3-sankey: https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js
+- vis-network: https://unpkg.com/vis-network/standalone/umd/vis-network.min.js
+Si alguna CDN falla, elige alternativas estables, pero mantén el espíritu “sin build”.
+En todo caso, toma siempre como referencia el archivo de muestra “derivaciones.html” para la parte de vis-network, adaptando el código a tu estructura modular.
+
+CRITERIOS DE ACEPTACIÓN (DEFINICIÓN DE “HECHO”)
+- Se carga un .xlsx y se muestra el nombre de archivo.
+- Los selects de columna origen/destino se pueblan desde headers y se excluyen mutuamente.
+- Sankey:
+  - Se ve correctamente y el slider Top-N filtra flujos.
+- Red:
+  - Se ve un grafo interactivo con física barnesHut + loadingBar durante estabilización, basado en el patrón de derivaciones.html. 
+  - Slider Top-N filtra edges.
+- Ego-networks:
+  - 4 paneles independientes, cada uno con selector de destino y red ego (radius=1) renderizada.
+- UX mínima:
+  - Mensajes cuando faltan selecciones o no hay datos suficientes.
+  - Sin errores en consola en el flujo normal.
+
+PLAN DE EJECUCIÓN (OBLIGATORIO PARA TI COMO AGENTE)
+- Implementa primero el esqueleto (carga excel + selectors + estado).
+- Luego Sankey funcional con datos agregados.
+- Luego Red (vis-network) funcional con Top-N + loadingBar.
+- Luego Ego-networks 2x2 con selección.
+- Finalmente refactoriza a módulos si el código creció.
+
+ENTREGABLE
+- Proyecto listo para abrir con doble click en index.html o con un servidor estático simple (sin build).
+- Incluye un README.md corto: cómo usar, librerías, y límites conocidos.
+
+NOTAS
+- No inventes datos. Todo sale del Excel.
+- Si detectas ambigüedad clave (ej. si debe haber columna de peso), implementa una solución por defecto (conteo) y deja opción de peso como mejora.
