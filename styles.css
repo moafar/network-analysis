@@ -1,0 +1,443 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* ===== HEADER ===== */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.header-info {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.header-controls {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+}
+
+.header-controls .control {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.header-controls label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.9);
+}
+
+.header-select {
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+#fileInput {
+    display: none;
+}
+
+/* ===== CONFIG TOOLBAR ===== */
+.config-toolbar {
+    background: white;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 20px;
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.file-name {
+    font-size: 14px;
+    opacity: 0.9;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: white;
+    color: #667eea;
+}
+
+.btn-primary:hover {
+    background: #f0f0f0;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ===== MAIN CONTAINER ===== */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #555;
+}
+
+select, input[type="text"] {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    background: white;
+    color: #333;
+    cursor: pointer;
+}
+
+select:hover, input[type="text"]:hover {
+    border-color: #bbb;
+}
+
+select:focus, input[type="text"]:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.alert {
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.alert-warning {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+}
+
+/* ===== MAIN CONTENT AREA ===== */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: white;
+}
+
+/* ===== TABS ===== */
+.tabs-header {
+    display: flex;
+    border-bottom: 2px solid #e0e0e0;
+    background: #fafafa;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 16px;
+    border: none;
+    background: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+    color: #333;
+    background: #f5f5f5;
+}
+
+.tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+/* ===== TAB CONTENT ===== */
+.tabs-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    position: relative;
+}
+
+.tab-pane {
+    width: 100%;
+    height: 100%;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-pane.active {
+    display: flex;
+}
+
+.tab-pane-toolbar {
+    flex-shrink: 0;
+    background: #f5f5f5;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 15px;
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    overflow-y: auto;
+    max-height: 90px;
+}
+
+.tab-pane-content {
+    flex: 1;
+    overflow: hidden;
+}
+
+.tab-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #999;
+    font-size: 16px;
+}
+
+/* ===== TOOLBAR GROUPS ===== */
+.toolbar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+}
+
+.toolbar-group label {
+    font-weight: 500;
+    color: #555;
+    font-size: 11px;
+}
+
+.toolbar-group input[type="range"] {
+    width: 100%;
+    min-width: 120px;
+    height: 6px;
+}
+
+.toolbar-group input[type="text"],
+.toolbar-group select {
+    padding: 5px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    width: 100%;
+}
+
+.toolbar-stats {
+    padding: 0 8px;
+    color: #666;
+    align-self: flex-end;
+    white-space: nowrap;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+
+/* ===== VISUALIZATION CONTAINERS ===== */
+.visualization-container {
+    width: 100%;
+    height: 100%;
+    background: #fafafa;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+#sankey-container, #network-container, #ego-container {
+    width: 100%;
+    height: 100%;
+    background: white;
+}
+
+/* ===== VISUALIZATION TOOLBAR ===== */
+.viz-toolbar {
+    background: #f5f5f5;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 20px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.viz-toolbar.hidden {
+    display: none;
+}
+
+/* ===== EGO NETWORKS GRID ===== */
+.ego-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 15px;
+    width: 100%;
+    height: 100%;
+}
+
+.ego-panel {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.ego-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fafafa;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.ego-header select {
+    margin-top: 0;
+    min-width: 140px;
+}
+
+.ego-canvas {
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ===== LOADING BAR ===== */
+.loading-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    width: 0%;
+    z-index: 10;
+    transition: width 0.3s ease;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+        max-height: 30vh;
+    }
+
+    .ego-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+    }
+
+    .header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+
+    .header-info {
+        flex-direction: column;
+        width: 100%;
+    }
+}
+
+/* ===== UTILITY ===== */
+.hidden {
+    display: none !important;
+}
+
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(102, 126, 234, 0.3);
+    border-radius: 50%;
+    border-top-color: #667eea;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Toolbar container positioning for dynamic toolbar */
+.toolbar-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: none;
+    z-index: 5;
+}
+
+/* Small stats bubble used in visualizations */
+.stats-bubble {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    font-size: 12px;
+    color: #666;
+    background: rgba(255,255,255,0.9);
+    padding: 5px 10px;
+    border-radius: 3px;
+}
+
+/* Ego panel small stats */
+.ego-stats {
+    font-size: 12px;
+    color: #555;
+    margin-top: 6px;
+    white-space: nowrap;
+}

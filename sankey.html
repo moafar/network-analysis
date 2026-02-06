@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -40,7 +40,7 @@
   </style>
 </head>
 <body>
-  <h2>Sankey desde Excel (Top N enlaces)</h2>
+  <h2>Sankey from Excel (Top N links)</h2>
 
   <div class="controls">
     <div class="control">
@@ -49,13 +49,13 @@
     </div>
 
     <div class="control">
-      <label for="topN">Top N enlaces:</label>
+      <label for="topN">Top N links:</label>
       <input id="topN" type="range" min="5" max="200" step="5" value="30" />
       <span id="topNVal" class="stat">30</span>
     </div>
 
     <div class="control">
-      <label for="sheetName">Hoja:</label>
+      <label for="sheetName">Sheet:</label>
       <select id="sheetName" disabled></select>
     </div>
 
@@ -69,23 +69,23 @@
 
     <div class="filters-row">
       <div class="control">
-        <label for="originFilter">Salida:</label>
+        <label for="originFilter">Origin:</label>
         <select id="originFilter" disabled>
-          <option value="">Todas</option>
+          <option value="">All</option>
         </select>
       </div>
 
       <div class="control">
-        <label for="destFilter">Llegada:</label>
+        <label for="destFilter">Destination:</label>
         <select id="destFilter" disabled>
-          <option value="">Todas</option>
+          <option value="">All</option>
         </select>
       </div>
     </div>
   </div>
 
-  <div id="chartWrap">
-    <div class="hint">Carga un Excel para ver el diagrama.</div>
+    <div id="chartWrap">
+    <div class="hint">Load an Excel file to see the diagram.</div>
   </div>
 
   <div id="err" class="error"></div>
@@ -121,7 +121,7 @@
     };
 
     function fillSelect(selectEl, values) {
-      selectEl.innerHTML = `<option value="">Todas</option>`;
+      selectEl.innerHTML = `<option value="">All</option>`;
       values.forEach(v => {
         const opt = document.createElement("option");
         opt.value = v;
@@ -149,7 +149,7 @@
     }
 
     function ensureColumns() {
-      if (!rows.length) return "No hay filas en la hoja seleccionada.";
+      if (!rows.length) return "No rows in the selected sheet.";
       const cols = Object.keys(rows[0]);
       const missing = [COL_SOURCE, COL_TARGET, COL_VALUE].filter(c => !cols.includes(c));
       if (missing.length) {
@@ -241,7 +241,7 @@
       // Stats
       const totalShown = d3.sum(graph.links, d => d.value);
       els.stats.textContent =
-        `Enlaces dibujados: ${graph.links.length}/${links.length} · Nodos: ${graph.nodes.length} · Derivaciones dibujadas: ${fmt(totalShown)}`;
+        `Links drawn: ${graph.links.length}/${links.length} · Nodes: ${graph.nodes.length} · Referrals drawn: ${fmt(totalShown)}`;
 
       // --- SVG + Zoom ---
       const svg = d3.create("svg")
@@ -265,7 +265,7 @@
           .attr("stroke", d => color(d.target.name))
           .attr("stroke-width", d => Math.max(1, d.width))
         .append("title")
-          .text(d => `${d.source.name} → ${d.target.name}\n${fmt(d.value)} derivacions`);
+          .text(d => `${d.source.name} → ${d.target.name}\n${fmt(d.value)} referrals`);
 
       // Nodes
       const node = gZoom.append("g")
@@ -280,7 +280,7 @@
           .attr("stroke", "rgba(0,0,0,0.25)");
 
       node.append("title")
-        .text(d => `${d.name}\n${fmt(d.value)} derivacions`);
+        .text(d => `${d.name}\n${fmt(d.value)} referrals`);
 
       // Labels
       gZoom.append("g")

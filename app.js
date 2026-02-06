@@ -24,6 +24,9 @@ const appState = {
     networkTopN: 100,
     networkOriginFilter: '',
     networkDestFilter: '',
+    // cached stats to avoid resetting on tab switch
+    sankeyStats: null,
+    networkStats: null,
 };
 
 /**
@@ -55,7 +58,7 @@ function checkLibrariesLoaded() {
     if (missing.length > 0) {
         const missingNames = missing.map(m => m.name).join(', ');
         showStatus(
-            `⚠ No se pudieron cargar las librerías: ${missingNames}. Verifica tu conexión a internet.`,
+            `⚠ Failed to load libraries: ${missingNames}. Check your internet connection.`,
             'error'
         );
         console.error('Librerías no disponibles:', missingNames);
@@ -73,8 +76,8 @@ async function handleFileSelect(event) {
 
     // Verificar que XLSX está disponible
     if (typeof XLSX === 'undefined') {
-        showStatus('Error: Librería XLSX no está cargada. Recarga la página.', 'error');
-        console.error('XLSX no está disponible');
+        showStatus('Error: XLSX library not loaded. Please reload the page.', 'error');
+        console.error('XLSX is not available');
         return;
     }
 
@@ -90,11 +93,11 @@ async function handleFileSelect(event) {
         const sheetNames = workbook.SheetNames;
         if (sheetNames.length > 1) {
             const selectedSheet = prompt(
-                `Selecciona la hoja a procesar:\n${sheetNames.join('\n')}`,
+                `Select the sheet to process:\n${sheetNames.join('\n')}`,
                 sheetNames[0]
             );
             if (!selectedSheet || !sheetNames.includes(selectedSheet)) {
-                showStatus('Selección de hoja cancelada.', 'error');
+                showStatus('Sheet selection cancelled.', 'error');
                 return;
             }
             appState.sheet = selectedSheet;
@@ -107,7 +110,7 @@ async function handleFileSelect(event) {
         
     } catch (error) {
         console.error('Error al cargar archivo:', error);
-        showStatus('Error al cargar el archivo. Verifica que sea un .xlsx válido.', 'error');
+        showStatus('Error loading file. Please ensure it is a valid .xlsx.', 'error');
     }
 }
 
@@ -124,7 +127,7 @@ function parseExcelData(workbook) {
         });
 
         if (!data || data.length === 0) {
-            showStatus('Archivo vacío o sin datos.', 'error');
+            showStatus('File is empty or contains no data.', 'error');
             appState.isValid = false;
             return;
         }
@@ -136,7 +139,7 @@ function parseExcelData(workbook) {
         appState.rows = data;
 
         if (appState.headers.length === 0 || appState.rows.length === 0) {
-            showStatus('Archivo sin columnas o sin filas de datos.', 'error');
+            showStatus('File has no columns or rows.', 'error');
             appState.isValid = false;
             return;
         }
@@ -146,7 +149,7 @@ function parseExcelData(workbook) {
         console.log('Número de filas:', appState.rows.length);
         
         showStatus(
-            `✓ Cargado: ${appState.rows.length} filas, ${appState.headers.length} columnas`,
+            `✓ Loaded: ${appState.rows.length} rows, ${appState.headers.length} columns`,
             'info'
         );
 
@@ -156,7 +159,7 @@ function parseExcelData(workbook) {
         
     } catch (error) {
         console.error('Error en parseExcelData:', error);
-        showStatus('Error al procesar datos.', 'error');
+        showStatus('Error processing data.', 'error');
         appState.isValid = false;
     }
 }
@@ -171,21 +174,21 @@ function populateColumnSelects() {
     const destCol = document.getElementById('destCol');
     const weightCol = document.getElementById('weightCol');
 
-    if (originCol) originCol.innerHTML = `<option value="">-- Selecciona --</option>${options}`;
-    if (destCol) destCol.innerHTML = `<option value="">-- Selecciona --</option>${options}`;
-    if (weightCol) weightCol.innerHTML = `<option value="">-- Automático (conteo) --</option>${options}`;
+    if (originCol) originCol.innerHTML = `<option value="">-- Select --</option>${options}`;
+    if (destCol) destCol.innerHTML = `<option value="">-- Select --</option>${options}`;
+    if (weightCol) weightCol.innerHTML = `<option value="">-- Automatic (count) --</option>${options}`;
 
-    // Poblar selects de ego-networks (destinos)
-    const destOptions = `<option value="">-- Selecciona destino --</option>${options}`;
+    // Inicializar selects de ego-networks vacíos (se llenarán con valores de la columna destino)
+    const egoPlaceholder = `<option value="">-- Select destination --</option>`;
     const ego1 = document.getElementById('ego1Dest');
     const ego2 = document.getElementById('ego2Dest');
     const ego3 = document.getElementById('ego3Dest');
     const ego4 = document.getElementById('ego4Dest');
     
-    if (ego1) ego1.innerHTML = destOptions;
-    if (ego2) ego2.innerHTML = destOptions;
-    if (ego3) ego3.innerHTML = destOptions;
-    if (ego4) ego4.innerHTML = destOptions;
+    if (ego1) ego1.innerHTML = egoPlaceholder;
+    if (ego2) ego2.innerHTML = egoPlaceholder;
+    if (ego3) ego3.innerHTML = egoPlaceholder;
+    if (ego4) ego4.innerHTML = egoPlaceholder;
 
     console.log('✓ Selectores poblados exitosamente');
 }
@@ -211,9 +214,12 @@ function handleColumnChange() {
     appState.destCol = destCol;
     appState.weightCol = weightCol;
 
+    // Siempre intentar poblar los selects de ego con los valores de la columna destino
+    populateEgoDestinations();
+
     // Validar selección mutua
     if (originCol === destCol && originCol !== '') {
-        showConfig('⚠ Origen y Destino no pueden ser la misma columna.', 'warning');
+        showConfig('⚠ Origin and Destination cannot be the same column.', 'warning');
         appState.originCol = '';
         appState.destCol = '';
         originColEl.value = '';
@@ -226,17 +232,58 @@ function handleColumnChange() {
         processAggregatedEdges();
         populateSankeyFilters();
         populateNetworkFilters();
-        showConfig('✓ Configuración válida. Las visualizaciones se actualizarán.', 'info');
+        showConfig('✓ Configuration valid. Visualizations will update.', 'info');
         // Renderizar visualizaciones
         renderSankey();
         renderNetwork();
     } else {
-        showConfig('Selecciona Origen y Destino para proceder.', 'warning');
+        showConfig('Select Origin and Destination to proceed.', 'warning');
     }
 }
 
 /**
- * Procesar y agregar edges
+ * Poblar los selects de las ego-networks con los valores únicos de la columna destino seleccionada
+ */
+function populateEgoDestinations() {
+    const destCol = appState.destCol;
+    const egoIds = ['ego1Dest', 'ego2Dest', 'ego3Dest', 'ego4Dest'];
+
+    // Helper para escapar HTML en opciones
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    if (!destCol || !appState.rows || appState.rows.length === 0) {
+        // Restaurar placeholder si no hay columna destino
+        egoIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<option value="">-- Select destination --</option>`;
+        });
+        return;
+    }
+
+    const vals = new Set();
+    appState.rows.forEach(row => {
+        const v = String(row[destCol] ?? '').trim();
+        if (v) vals.add(v);
+    });
+
+    const sorted = Array.from(vals).sort((a,b) => a.localeCompare(b));
+    const optionsHtml = `<option value="">-- Select destination --</option>` + sorted.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+
+    egoIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = optionsHtml;
+    });
+}
+
+/**
+ * Procesar y agregar links
  */
 function processAggregatedEdges() {
     const { originCol, destCol, weightCol, rows } = appState;
@@ -275,8 +322,8 @@ function processAggregatedEdges() {
     // Construir índices para ego-networks
     buildIndices();
 
-    console.log(`Procesadas ${appState.aggregatedEdges.length} aristas únicas.`);
-    console.log(`${appState.uniqueNodes.size} nodos únicos.`);
+    console.log(`Processed ${appState.aggregatedEdges.length} unique edges.`);
+    console.log(`${appState.uniqueNodes.size} unique nodes.`);
 }
 
 /**
@@ -304,7 +351,7 @@ function buildIndices() {
 /**
  * UI: Cambiar pestaña activa
  */
-function switchTab(tabName) {
+function switchTab(tabName, sourceEl) {
     // Desactivar todas las pestañas y botones
     document.querySelectorAll('.tab-pane').forEach(pane => {
         pane.classList.remove('active');
@@ -313,12 +360,12 @@ function switchTab(tabName) {
         btn.classList.remove('active');
     });
 
-    // Activar pestaña y botón seleccionado
+    // Activar pestaña seleccionado
     const pane = document.getElementById(`tab-${tabName}`);
     if (pane) {
         pane.classList.add('active');
     }
-    event.target.classList.add('active');
+    if (sourceEl && sourceEl.classList) sourceEl.classList.add('active');
 
     // Mostrar controles específicos de la tab
     showTabControls(tabName);
@@ -339,64 +386,79 @@ function showTabControls(tabName) {
     if (tabName === 'sankey') {
         toolbar.classList.remove('hidden');
         toolbar.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="sankeyTopN" style="font-size: 11px; color: #666;">Top-N</label>
-                <input type="range" id="sankeyTopN" min="5" max="500" step="5" value="${appState.sankeyTopN}" 
-                       style="width: 120px; height: 6px;"
-                       oninput="updateSankeyTopN(this.value)">
-                <span id="sankeyTopNVal" style="font-size: 10px; color: #666; text-align: center;">${appState.sankeyTopN}</span>
+            <div class="toolbar-group">
+                <label for="sankeyTopN">Top-N</label>
+                <input type="range" id="sankeyTopN" min="5" max="500" step="5" value="${appState.sankeyTopN}">
+                <span id="sankeyTopNVal">${appState.sankeyTopN}</span>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="sankeyOriginFilter" style="font-size: 11px; color: #666;">Filtrar Origen</label>
-                <select id="sankeyOriginFilter" style="padding: 5px 8px; font-size: 12px;" onchange="updateSankeyFilters()">
-                    <option value="">Todas</option>
-                </select>
+            <div class="toolbar-group">
+                <label for="sankeyOriginFilter">Origin</label>
+                <select id="sankeyOriginFilter"><option value="">All</option></select>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="sankeyDestFilter" style="font-size: 11px; color: #666;">Filtrar Destino</label>
-                <select id="sankeyDestFilter" style="padding: 5px 8px; font-size: 12px;" onchange="updateSankeyFilters()">
-                    <option value="">Todas</option>
-                </select>
+            <div class="toolbar-group">
+                <label for="sankeyDestFilter">Destination</label>
+                <select id="sankeyDestFilter"><option value="">All</option></select>
             </div>
             <div style="display: flex; gap: 4px; align-self: flex-end;">
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="sankeyZoom(1.2)">+</button>
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="sankeyZoom(1/1.2)">−</button>
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="sankeyZoomReset()">Reset</button>
+                <button class="btn" data-action="sankeyZoom" data-scale="1.2">+</button>
+                <button class="btn" data-action="sankeyZoom" data-scale="0.8333333333">−</button>
+                <button class="btn" data-action="sankeyZoomReset">Reset</button>
             </div>
-            <div id="sankeyStats" style="font-size: 11px; color: #666; align-self: flex-end; white-space: nowrap; margin-left: auto;">Mostrando: -- enlaces de --</div>
+            <div id="sankeyToolbarStats" class="toolbar-stats">Showing: -- links of --</div>
         `;
         // Re-popular los selects
         populateSankeyFilters();
+
+        // Mostrar estadísticas previas si existen (no reiniciar a "--")
+        const sankeyToolbarStatsEl = document.getElementById('sankeyToolbarStats');
+        if (sankeyToolbarStatsEl) {
+            if (appState.sankeyStats) {
+                const s = appState.sankeyStats;
+                sankeyToolbarStatsEl.textContent = `Links: ${s.displayedLinks}/${s.totalLinks} · Displayed weight: ${s.displayedWeight.toLocaleString()} / ${s.totalWeight.toLocaleString()}`;
+            } else {
+                // Mostrar totales generales si no hay estadísticas previas
+                const totalLinksInit = appState.aggregatedEdges.length || 0;
+                const totalWeightInit = appState.aggregatedEdges.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+                sankeyToolbarStatsEl.textContent = `Links: 0/${totalLinksInit} · Displayed weight: 0 / ${totalWeightInit.toLocaleString()}`;
+            }
+        }
     } else if (tabName === 'network') {
         toolbar.classList.remove('hidden');
         toolbar.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="networkTopN" style="font-size: 11px; color: #666;">Top-N aristas</label>
-                <input type="range" id="networkTopN" min="5" max="500" step="5" value="${appState.networkTopN || 100}" 
-                       style="width: 120px; height: 6px;"
-                       oninput="updateNetworkTopN(this.value)">
-                <span id="networkTopNVal" style="font-size: 10px; color: #666; text-align: center;">${appState.networkTopN || 100}</span>
+            <div class="toolbar-group">
+                <label for="networkTopN">Top-N edges</label>
+                <input type="range" id="networkTopN" min="5" max="500" step="5" value="${appState.networkTopN || 100}">
+                <span id="networkTopNVal">${appState.networkTopN || 100}</span>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="networkOriginFilter" style="font-size: 11px; color: #666;">Filtrar Origen</label>
-                <select id="networkOriginFilter" style="padding: 5px 8px; font-size: 12px;" onchange="updateNetworkFilters()">
-                    <option value="">Todas</option>
-                </select>
+            <div class="toolbar-group">
+                <label for="networkOriginFilter">Origin</label>
+                <select id="networkOriginFilter"><option value="">All</option></select>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="networkDestFilter" style="font-size: 11px; color: #666;">Filtrar Destino</label>
-                <select id="networkDestFilter" style="padding: 5px 8px; font-size: 12px;" onchange="updateNetworkFilters()">
-                    <option value="">Todas</option>
-                </select>
+            <div class="toolbar-group">
+                <label for="networkDestFilter">Destination</label>
+                <select id="networkDestFilter"><option value="">All</option></select>
             </div>
             <div style="display: flex; gap: 4px; align-self: flex-end;">
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="networkZoom(0.8)">−</button>
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="networkZoom(1.2)">+</button>
-                <button class="btn" style="padding: 5px 8px; font-size: 12px;" onclick="networkZoomReset()">Reset</button>
+                <button class="btn" data-action="networkZoom" data-factor="0.8">−</button>
+                <button class="btn" data-action="networkZoom" data-factor="1.2">+</button>
+                <button class="btn" data-action="networkZoomReset">Reset</button>
             </div>
-            <div id="networkStats" style="font-size: 11px; color: #666; align-self: flex-end; white-space: nowrap;">Mostrando: -- aristas de --</div>
+            <div id="networkToolbarStats" class="toolbar-stats">Showing: -- edges of --</div>
         `;
         populateNetworkFilters();
+
+        // Mostrar estadísticas previas si existen (no reiniciar a "--")
+        const networkToolbarStatsEl = document.getElementById('networkToolbarStats');
+        if (networkToolbarStatsEl) {
+            if (appState.networkStats) {
+                const n = appState.networkStats;
+                networkToolbarStatsEl.textContent = `Links: ${n.displayedLinks}/${n.totalLinks} · Displayed weight: ${n.displayedWeight.toLocaleString()} / ${n.totalWeight.toLocaleString()}`;
+            } else {
+                const totalLinksInit = appState.aggregatedEdges.length || 0;
+                const totalWeightInit = appState.aggregatedEdges.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+                networkToolbarStatsEl.textContent = `Links: 0/${totalLinksInit} · Displayed weight: 0 / ${totalWeightInit.toLocaleString()}`;
+            }
+        }
     } else {
         toolbar.classList.add('hidden');
         toolbar.innerHTML = '';
@@ -407,10 +469,10 @@ function showTabControls(tabName) {
  * UI: Actualizar header con nombre de archivo
  */
 function updateHeader() {
-    const fileName = appState.fileName || '(ninguno)';
+    const fileName = appState.fileName || '(none)';
     const fileNameEl = document.getElementById('fileName');
     if (fileNameEl) {
-        fileNameEl.textContent = `Archivo: ${fileName}`;
+        fileNameEl.textContent = `File: ${fileName}`;
     }
 }
 
@@ -443,7 +505,289 @@ function showConfig(message, type = 'info') {
  * Se implementará en próximas fases
  */
 function updateEgoNetwork(panelId) {
-    console.log(`Ego-Network ${panelId} actualizada (implementación próxima)`);
+    const sel = document.getElementById(`ego${panelId}Dest`);
+    const container = document.getElementById(`ego${panelId}-canvas`);
+
+    if (!container) {
+        console.warn('Contenedor ego no encontrado para panel', panelId);
+        return;
+    }
+
+    // Placeholder when no selection
+    if (!sel || !sel.value) {
+        container.innerHTML = '<div class="tab-placeholder">Select a destination to show the ego-network.</div>';
+        // destroy previous instance if any
+        if (window.egoNetworkInstances && window.egoNetworkInstances[panelId]) {
+            try { window.egoNetworkInstances[panelId].destroy(); } catch(e){}
+            delete window.egoNetworkInstances[panelId];
+        }
+        return;
+    }
+
+    const egoName = sel.value;
+
+    if (!appState.isValid || !appState.aggregatedEdges || appState.aggregatedEdges.length === 0) {
+        container.innerHTML = '<div class="tab-placeholder">No data available to generate the ego-network.</div>';
+        return;
+    }
+
+    // Recolectar aristas relacionadas con el ego (entrantes y salientes)
+    const outEdges = appState.outIndex.get(egoName) || [];
+    const inEdges = appState.inIndex.get(egoName) || [];
+
+    const neighbors = new Set();
+    outEdges.forEach(e => neighbors.add(e.target));
+    inEdges.forEach(e => neighbors.add(e.source));
+    neighbors.add(egoName);
+
+    // Construir nodos y calcular tamaño por suma de pesos relacionados
+    const nodeList = Array.from(neighbors);
+    const idMap = {};
+    nodeList.forEach((n, i) => idMap[n] = i);
+
+    // Calcular peso total por nodo (suma de valores de aristas que involucran al nodo, dentro del subgrafo)
+    const weightByNode = {};
+    nodeList.forEach(n => weightByNode[n] = 0);
+
+    // Aristas a mostrar: las que tienen al menos un extremo en el conjunto (preferimos mostrar conexiones con el ego)
+    const edgesToShow = [];
+    // Preferir mostrar edges conectados al ego
+    outEdges.forEach(e => {
+        edgesToShow.push(e);
+        weightByNode[e.source] += Number(e.value) || 0;
+        weightByNode[e.target] += Number(e.value) || 0;
+    });
+    inEdges.forEach(e => {
+        // evitar duplicados
+        if (!edgesToShow.some(x => x.source === e.source && x.target === e.target)) {
+            edgesToShow.push(e);
+            weightByNode[e.source] += Number(e.value) || 0;
+            weightByNode[e.target] += Number(e.value) || 0;
+        }
+    });
+
+    // Opcional: incluir aristas entre vecinos para contexto (si existen)
+    appState.aggregatedEdges.forEach(e => {
+        if (neighbors.has(e.source) && neighbors.has(e.target)) {
+            // ya incluidas las que tocan al ego; evitar duplicados
+            if (!edgesToShow.some(x => x.source === e.source && x.target === e.target)) {
+                edgesToShow.push(e);
+                weightByNode[e.source] += Number(e.value) || 0;
+                weightByNode[e.target] += Number(e.value) || 0;
+            }
+        }
+    });
+
+    // Calcular estadísticas del subgrafo mostrado
+    const neighborCount = Math.max(0, neighbors.size - 1);
+    const edgesCount = edgesToShow.length;
+    const totalDisplayedWeight = edgesToShow.reduce((s, it) => s + (Number(it.value) || 0), 0);
+
+    // Actualizar UI del panel con estadísticas
+    const statsEl = document.getElementById(`ego${panelId}Stats`);
+    if (statsEl) {
+        // Show English labels: Edges / Referrals / Neighbors
+        if (neighborCount === edgesCount) {
+            statsEl.textContent = `Edges: ${edgesCount} · Referrals: ${totalDisplayedWeight.toLocaleString()}`;
+        } else {
+            statsEl.textContent = `Neighbors: ${neighborCount} · Edges: ${edgesCount} · Referrals: ${totalDisplayedWeight.toLocaleString()}`;
+        }
+    }
+
+    // Construir arrays para vis-network
+    const nodesArray = nodeList.map((name, idx) => {
+        const totalWeight = weightByNode[name] || 0;
+        const size = 15 + Math.min(85, Math.round(totalWeight));
+        return {
+            id: idx,
+            label: name,
+            title: `${name}\nReferrals: ${totalWeight.toLocaleString()}`,
+            value: totalWeight,
+            size: size,
+            shape: 'dot'
+        };
+    });
+
+    const edgesArray = edgesToShow.map((e, idx) => ({
+        id: `ego-${panelId}-${idx}`,
+        from: idMap[e.source],
+        to: idMap[e.target],
+        value: e.value,
+        title: `${e.source} → ${e.target}\nReferrals: ${Number(e.value).toLocaleString()}`,
+        width: Math.max(1, Math.min(6, (Number(e.value) || 0) / 1)),
+        arrows: { to: { enabled: true, scaleFactor: 0.5 } }
+    }));
+
+    // Limpiar contenedor
+    container.innerHTML = '';
+
+    // Crear instancia vis-network (guardar referencias por panel)
+    const data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
+    const options = {
+        physics: {
+            enabled: true,
+            solver: 'barnesHut',
+            barnesHut: {
+                avoidOverlap: 0,
+                centralGravity: 0.25,
+                damping: 0.45,
+                gravitationalConstant: -2800,
+                springConstant: 0.02,
+                springLength: 150
+            },
+            stabilization: {
+                enabled: true,
+                fit: true,
+                iterations: 1000,
+                onlyDynamicEdges: false,
+                updateInterval: 50
+            }
+        },
+        interaction: {
+            dragNodes: true,
+            hideEdgesOnDrag: false,
+            hideNodesOnDrag: false,
+            hover: true,
+            zoomView: true,
+            dragView: true,
+            multiselect: false
+        },
+        nodes: { physics: true, scaling: { min: 10, max: 60 } },
+        edges: { smooth: { enabled: true, type: 'dynamic' } },
+        layout: { improvedLayout: true }
+    };
+
+    // destruir instancia previa si existe
+    if (!window.egoNetworkInstances) window.egoNetworkInstances = {};
+    if (window.egoNetworkInstances[panelId]) {
+        try { window.egoNetworkInstances[panelId].destroy(); } catch(e){}
+        delete window.egoNetworkInstances[panelId];
+    }
+
+    try {
+        const net = new vis.Network(container, data, options);
+        // bandera para evitar que subsequent 'stabilized' events vuelvan a centrar la red
+        net._egoInitialFitDone = false;
+        window.egoNetworkInstances[panelId] = net;
+
+        // Al terminar la estabilización, desactivar física para evitar vibraciones
+        net.once('stabilizationIterationsDone', () => {
+            try {
+                net.setOptions({ physics: { enabled: false } });
+            } catch (e) {}
+            try { net.fit(); } catch (e) {}
+            net._egoInitialFitDone = true;
+        });
+
+        // También ajustar zoom/fit cuando la red esté establecida
+        net.on('stabilized', () => {
+            try {
+                if (!net._egoInitialFitDone) {
+                    try { net.fit(); } catch (e) {}
+                    net._egoInitialFitDone = true;
+                }
+            } catch (e) {}
+        });
+
+        // Al arrastrar, habilitar física temporalmente y aplicar un pequeño nudge a vecinos
+        if (!window._egoPhysicsTimeouts) window._egoPhysicsTimeouts = {};
+
+        net.on('dragStart', (params) => {
+            try {
+                // Si un nodo se está arrastrando, asegurarnos que no esté fijado
+                const dragged = params && params.nodes && params.nodes[0];
+                if (typeof dragged !== 'undefined' && dragged !== null) {
+                    try { data.nodes.update({ id: dragged, fixed: { x: false, y: false } }); } catch(e){}
+                }
+                // habilitar física para permitir movimiento ligero
+                net.setOptions({ physics: { enabled: true } });
+            } catch (e) {}
+
+            // aplicar nudge a nodos conectados
+            try {
+                const dragged = params && params.nodes && params.nodes[0];
+                if (typeof dragged !== 'undefined' && dragged !== null) {
+                    const connected = net.getConnectedNodes(dragged) || [];
+                    if (connected.length > 0) {
+                        const ids = [dragged].concat(connected);
+                        const positions = net.getPositions(ids);
+                        const posDragged = positions[dragged];
+                        const nudgePx = 12;
+                        if (posDragged) {
+                            connected.forEach(nei => {
+                                const posNei = positions[nei];
+                                if (!posNei) return;
+                                let dx = posNei.x - posDragged.x;
+                                let dy = posNei.y - posDragged.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                                const nx = dx / dist;
+                                const ny = dy / dist;
+                                const newX = posNei.x + nx * nudgePx;
+                                const newY = posNei.y + ny * nudgePx;
+                                try { net.moveNode(nei, newX, newY); } catch (e) {}
+                            });
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            // clear pending disable timeout
+            if (window._egoPhysicsTimeouts[panelId]) {
+                clearTimeout(window._egoPhysicsTimeouts[panelId]);
+                delete window._egoPhysicsTimeouts[panelId];
+            }
+        });
+
+        net.on('dragEnd', (params) => {
+            try {
+                // Al soltar, permitir que la física asiente la red durante un corto periodo
+                // Primero limpiamos timeouts previos
+                if (window._egoPhysicsTimeouts[panelId]) {
+                    clearTimeout(window._egoPhysicsTimeouts[panelId]);
+                    delete window._egoPhysicsTimeouts[panelId];
+                }
+
+                // Activar física con parámetros similares al archivo de referencia
+                try {
+                    net.setOptions({
+                        physics: {
+                            enabled: true,
+                            barnesHut: {
+                                avoidOverlap: 0,
+                                centralGravity: 0.25,
+                                damping: 0.45,
+                                gravitationalConstant: -2800,
+                                springConstant: 0.02,
+                                springLength: 150
+                            }
+                        }
+                    });
+                    try { net.startSimulation(); } catch (e) {}
+                } catch (e) {}
+
+                // Esperar un tiempo para que la red se asiente y luego desactivar física
+                window._egoPhysicsTimeouts[panelId] = setTimeout(() => {
+                    try {
+                        // No fijamos posiciones: guardamos la disposición que la física dejó
+                        // y simplemente desactivamos la física para detener movimientos.
+                        try { net.setOptions({ physics: { enabled: false } }); } catch (e) {}
+                        try { net.stopSimulation(); } catch (e) {}
+                    } catch (err) {
+                        // silencioso
+                    } finally {
+                        if (window._egoPhysicsTimeouts[panelId]) {
+                            clearTimeout(window._egoPhysicsTimeouts[panelId]);
+                            delete window._egoPhysicsTimeouts[panelId];
+                        }
+                    }
+                }, 1200);
+            } catch (e) {}
+        });
+
+    } catch (err) {
+        console.error('Error creando ego-network:', err);
+        container.innerHTML = '<div class="tab-placeholder">Error al renderizar la ego-network.</div>';
+    }
 }
 
 /**
@@ -530,7 +874,7 @@ function populateSankeyFilters() {
     const originSelect = document.getElementById('sankeyOriginFilter');
     if (originSelect) {
         const originValue = originSelect.value;
-        originSelect.innerHTML = '<option value="">Todas</option>';
+        originSelect.innerHTML = '<option value="">All</option>';
         originsArray.forEach(o => {
             const opt = document.createElement('option');
             opt.value = o;
@@ -544,7 +888,7 @@ function populateSankeyFilters() {
     const destSelect = document.getElementById('sankeyDestFilter');
     if (destSelect) {
         const destValue = destSelect.value;
-        destSelect.innerHTML = '<option value="">Todas</option>';
+        destSelect.innerHTML = '<option value="">All</option>';
         destsArray.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d;
@@ -616,7 +960,7 @@ function populateNetworkFilters() {
     const originSelect = document.getElementById('networkOriginFilter');
     const originValue = originSelect ? originSelect.value : '';
     if (originSelect) {
-        originSelect.innerHTML = '<option value="">Todas</option>';
+        originSelect.innerHTML = '<option value="">All</option>';
         originsArray.forEach(o => {
             const opt = document.createElement('option');
             opt.value = o;
@@ -630,7 +974,7 @@ function populateNetworkFilters() {
     const destSelect = document.getElementById('networkDestFilter');
     const destValue = destSelect ? destSelect.value : '';
     if (destSelect) {
-        destSelect.innerHTML = '<option value="">Todas</option>';
+        destSelect.innerHTML = '<option value="">All</option>';
         destsArray.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d;
@@ -650,10 +994,16 @@ function renderSankey() {
         return;
     }
 
-    // Actualizar stats
+    // Calcular estadísticas globales y mostrar resumen inicial
     const statsEl = document.getElementById('sankeyStats');
+    const toolbarStatsEl = document.getElementById('sankeyToolbarStats');
+    const totalLinks = appState.aggregatedEdges.length;
+    const totalWeight = appState.aggregatedEdges.reduce((s, e) => s + (Number(e.value) || 0), 0);
     if (statsEl) {
-        statsEl.textContent = `Mostrando: ${appState.aggregatedEdges.length} enlaces en total`;
+        statsEl.textContent = `Links: ${totalLinks} · Total weight: ${totalWeight.toLocaleString()}`;
+    }
+    if (toolbarStatsEl) {
+        toolbarStatsEl.textContent = `Links: -- / ${totalLinks} · Displayed weight: -- / ${totalWeight.toLocaleString()}`;
     }
 
     // Filtrar edges según Top-N y filtros
@@ -672,9 +1022,22 @@ function renderSankey() {
     const topN = appState.sankeyTopN || 50;
     const displayedEdges = filteredEdges.slice(0, topN);
 
-    // Actualizar stats más detallado
+    // Estadísticas detalladas: enlaces mostrados y suma de pesos
+    const displayedLinks = displayedEdges.length;
+    const displayedWeight = displayedEdges.reduce((s, e) => s + (Number(e.value) || 0), 0);
+    // Guardar estadísticas en el estado para mostrarlas al cambiar de pestaña
+    appState.sankeyStats = {
+        totalLinks,
+        totalWeight,
+        displayedLinks,
+        displayedWeight
+    };
+
     if (statsEl) {
-        statsEl.textContent = `Mostrando: ${displayedEdges.length}/${appState.aggregatedEdges.length} enlaces`;
+        statsEl.textContent = `Displayed links: ${displayedLinks}/${totalLinks} · Displayed weight: ${displayedWeight.toLocaleString()} / ${totalWeight.toLocaleString()}`;
+    }
+    if (toolbarStatsEl) {
+        toolbarStatsEl.textContent = `Links: ${displayedLinks}/${totalLinks} · Displayed weight: ${displayedWeight.toLocaleString()} / ${totalWeight.toLocaleString()}`;
     }
 
     // Extraer nodos
@@ -746,7 +1109,7 @@ function renderSankey() {
             .attr('stroke-opacity', 0.55);
     
     links.append('title')
-        .text(d => `${d.source.name} → ${d.target.name}\n${d.value.toLocaleString()} derivaciones`);
+        .text(d => `${d.source.name} → ${d.target.name}\n${d.value.toLocaleString()} referrals`);
 
     // Dibujar nodos
     const node = gZoom.append('g')
@@ -920,7 +1283,25 @@ function renderNetwork() {
     // Actualizar stats
     const statsEl = document.getElementById('networkStats');
     if (statsEl) {
-        statsEl.textContent = `Mostrando: ${displayedEdges.length}/${appState.aggregatedEdges.length} aristas`;
+        // Calcular estadísticas para la red
+        const totalLinksN = appState.aggregatedEdges.length;
+        const totalWeightN = appState.aggregatedEdges.reduce((s, e) => s + (Number(e.value) || 0), 0);
+        const displayedLinksN = displayedEdges.length;
+        const displayedWeightN = displayedEdges.reduce((s, e) => s + (Number(e.value) || 0), 0);
+
+        // Guardar en el estado para que no se reinicialice al cambiar de pestaña
+        appState.networkStats = {
+            totalLinks: totalLinksN,
+            totalWeight: totalWeightN,
+            displayedLinks: displayedLinksN,
+            displayedWeight: displayedWeightN
+        };
+
+        statsEl.textContent = `Displayed links: ${displayedLinksN}/${totalLinksN} · Displayed weight: ${displayedWeightN.toLocaleString()} / ${totalWeightN.toLocaleString()}`;
+        const toolbarNet = document.getElementById('networkToolbarStats');
+        if (toolbarNet) {
+            toolbarNet.textContent = `Links: ${displayedLinksN}/${totalLinksN} · Displayed weight: ${displayedWeightN.toLocaleString()} / ${totalWeightN.toLocaleString()}`;
+        }
     }
 
     // Construir nodos y calcular grados (suma de derivaciones in + out)
@@ -976,7 +1357,7 @@ function renderNetwork() {
         nodesArray.push({
             id: numId,
             label: nodeName,
-            title: `${nodeName} - Derivaciones: ${totalDerivations.toLocaleString()}`,
+            title: `${nodeName} - Referrals: ${totalDerivations.toLocaleString()}`,
             size: size,
             color: {
                 background: color,
@@ -1009,7 +1390,7 @@ function renderNetwork() {
             to: toId,
             value: edge.value,
             width: width,
-            title: `${edge.source} → ${edge.target}<br/>Derivaciones: ${edge.value.toLocaleString()}`,
+            title: `${edge.source} → ${edge.target}<br/>Referrals: ${edge.value.toLocaleString()}`,
             arrows: 'to',
             color: {
                 color: edgeColor,
@@ -1034,7 +1415,7 @@ function renderNetwork() {
         physics: {
             enabled: true,
             barnesHut: {
-                gravitationalConstant: -15000,
+                gravitationalConstant: -8000,
                 centralGravity: 0.5,
                 springLength: 250,
                 springConstant: 0.02,
