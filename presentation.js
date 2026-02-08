@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Column selects (header)
-    ['originCol', 'destCol', 'weightCol'].forEach(id => {
+    ['originCol', 'destCol', 'weightCol', 'originLatCol', 'originLngCol', 'destLatCol', 'destLngCol'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', () => {
             if (typeof handleColumnChange === 'function') handleColumnChange();

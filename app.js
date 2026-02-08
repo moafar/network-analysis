@@ -11,11 +11,16 @@ const appState = {
     originCol: '',
     destCol: '',
     weightCol: '',
+    originLatCol: '',
+    originLngCol: '',
+    destLatCol: '',
+    destLngCol: '',
     aggregatedEdges: [], // edges ya procesados
     uniqueNodes: new Set(),
     isValid: false,
     outIndex: new Map(), // source -> [edges]
     inIndex: new Map(),  // target -> [edges]
+    nodeCoordinates: new Map(), // node name -> { lat, lng }
     // Sankey
     sankeyTopN: 50,
     sankeyOriginFilter: '',
@@ -50,7 +55,8 @@ function checkLibrariesLoaded() {
     const libs = [
         { name: 'XLSX', check: () => typeof XLSX !== 'undefined' },
         { name: 'd3', check: () => typeof d3 !== 'undefined' },
-        { name: 'vis', check: () => typeof vis !== 'undefined' }
+        { name: 'vis', check: () => typeof vis !== 'undefined' },
+        { name: 'L (Leaflet)', check: () => typeof L !== 'undefined' }
     ];
 
     const missing = libs.filter(lib => !lib.check());
@@ -173,10 +179,18 @@ function populateColumnSelects() {
     const originCol = document.getElementById('originCol');
     const destCol = document.getElementById('destCol');
     const weightCol = document.getElementById('weightCol');
+    const originLatCol = document.getElementById('originLatCol');
+    const originLngCol = document.getElementById('originLngCol');
+    const destLatCol = document.getElementById('destLatCol');
+    const destLngCol = document.getElementById('destLngCol');
 
     if (originCol) originCol.innerHTML = `<option value="">-- Select --</option>${options}`;
     if (destCol) destCol.innerHTML = `<option value="">-- Select --</option>${options}`;
     if (weightCol) weightCol.innerHTML = `<option value="">-- Automatic (count) --</option>${options}`;
+    if (originLatCol) originLatCol.innerHTML = `<option value="">-- Optional --</option>${options}`;
+    if (originLngCol) originLngCol.innerHTML = `<option value="">-- Optional --</option>${options}`;
+    if (destLatCol) destLatCol.innerHTML = `<option value="">-- Optional --</option>${options}`;
+    if (destLngCol) destLngCol.innerHTML = `<option value="">-- Optional --</option>${options}`;
 
     // Inicializar selects de ego-networks vacíos (se llenarán con valores de la columna destino)
     const egoPlaceholder = `<option value="">-- Select destination --</option>`;
@@ -200,6 +214,10 @@ function handleColumnChange() {
     const originColEl = document.getElementById('originCol');
     const destColEl = document.getElementById('destCol');
     const weightColEl = document.getElementById('weightCol');
+    const originLatColEl = document.getElementById('originLatCol');
+    const originLngColEl = document.getElementById('originLngCol');
+    const destLatColEl = document.getElementById('destLatCol');
+    const destLngColEl = document.getElementById('destLngCol');
     
     if (!originColEl || !destColEl) {
         console.warn('Elementos de selección de columnas no encontrados');
@@ -209,10 +227,18 @@ function handleColumnChange() {
     const originCol = originColEl.value;
     const destCol = destColEl.value;
     const weightCol = weightColEl ? weightColEl.value : '';
+    const originLatCol = originLatColEl ? originLatColEl.value : '';
+    const originLngCol = originLngColEl ? originLngColEl.value : '';
+    const destLatCol = destLatColEl ? destLatColEl.value : '';
+    const destLngCol = destLngColEl ? destLngColEl.value : '';
 
     appState.originCol = originCol;
     appState.destCol = destCol;
     appState.weightCol = weightCol;
+    appState.originLatCol = originLatCol;
+    appState.originLngCol = originLngCol;
+    appState.destLatCol = destLatCol;
+    appState.destLngCol = destLngCol;
 
     // Siempre intentar poblar los selects de ego con los valores de la columna destino
     populateEgoDestinations();
@@ -236,8 +262,22 @@ function handleColumnChange() {
         // Renderizar visualizaciones
         renderSankey();
         renderNetwork();
+        // Si hay coordenadas (al menos un par), renderizar mapa
+        if ((originLatCol && originLngCol) || (destLatCol && destLngCol)) {
+            console.log('Intentando renderizar mapa con coordenadas:', {
+                originLatCol, originLngCol, destLatCol, destLngCol
+            });
+            renderMap();
+        }
     } else {
         showConfig('Select Origin and Destination to proceed.', 'warning');
+    }
+    
+    // Si ya hay datos procesados y solo cambiaron las columnas de coords, actualizar mapa
+    if (appState.aggregatedEdges.length > 0 && 
+        ((originLatCol && originLngCol) || (destLatCol && destLngCol))) {
+        console.log('Actualizando solo el mapa con nuevas coordenadas');
+        renderMap();
     }
 }
 
@@ -459,6 +499,9 @@ function showTabControls(tabName) {
                 networkToolbarStatsEl.textContent = `Links: 0/${totalLinksInit} · Displayed weight: 0 / ${totalWeightInit.toLocaleString()}`;
             }
         }
+    } else if (tabName === 'ego' || tabName === 'map') {
+        toolbar.classList.add('hidden');
+        toolbar.innerHTML = '';
     } else {
         toolbar.classList.add('hidden');
         toolbar.innerHTML = '';
@@ -1527,4 +1570,228 @@ function renderNetwork() {
     });
 
     console.log('Red Gravitacional renderizada correctamente');
+}
+
+/**
+ * Extraer coordenadas geográficas para cada nodo
+ */
+function extractNodeCoordinates() {
+    const hasOriginCoords = appState.originLatCol && appState.originLngCol;
+    const hasDestCoords = appState.destLatCol && appState.destLngCol;
+
+    console.log('extractNodeCoordinates:', { hasOriginCoords, hasDestCoords });
+    console.log('Columnas:', {
+        originLatCol: appState.originLatCol,
+        originLngCol: appState.originLngCol,
+        destLatCol: appState.destLatCol,
+        destLngCol: appState.destLngCol
+    });
+
+    if (!hasOriginCoords && !hasDestCoords) {
+        console.warn('Columnas de latitud/longitud no configuradas');
+        return;
+    }
+
+    appState.nodeCoordinates.clear();
+
+    // Crear mapa de coordenadas por nodo
+    let coordsExtraidas = 0;
+    appState.rows.forEach((row, idx) => {
+        const originNode = String(row[appState.originCol] ?? '').trim();
+        const destNode = String(row[appState.destCol] ?? '').trim();
+
+        // Extraer coordenadas de origen si están disponibles
+        if (hasOriginCoords && originNode) {
+            const originLat = parseFloat(row[appState.originLatCol]);
+            const originLng = parseFloat(row[appState.originLngCol]);
+            if (idx < 3) console.log(`Fila ${idx} origen:`, originNode, originLat, originLng);
+            if (!isNaN(originLat) && !isNaN(originLng) && !appState.nodeCoordinates.has(originNode)) {
+                appState.nodeCoordinates.set(originNode, { lat: originLat, lng: originLng });
+                coordsExtraidas++;
+            }
+        }
+
+        // Extraer coordenadas de destino si están disponibles
+        if (hasDestCoords && destNode) {
+            const destLat = parseFloat(row[appState.destLatCol]);
+            const destLng = parseFloat(row[appState.destLngCol]);
+            if (idx < 3) console.log(`Fila ${idx} destino:`, destNode, destLat, destLng);
+            if (!isNaN(destLat) && !isNaN(destLng) && !appState.nodeCoordinates.has(destNode)) {
+                appState.nodeCoordinates.set(destNode, { lat: destLat, lng: destLng });
+                coordsExtraidas++;
+            }
+        }
+    });
+
+    console.log(`Coordenadas extraídas para ${appState.nodeCoordinates.size} nodos (${coordsExtraidas} asignaciones)`);
+}
+
+/**
+ * Renderizar mapa geográfico con Leaflet
+ */
+function renderMap() {
+    console.log('renderMap() llamado');
+    console.log('Estado:', {
+        isValid: appState.isValid,
+        originLatCol: appState.originLatCol,
+        originLngCol: appState.originLngCol,
+        destLatCol: appState.destLatCol,
+        destLngCol: appState.destLngCol,
+        leafletDisponible: typeof L !== 'undefined'
+    });
+    
+    const hasOriginCoords = appState.originLatCol && appState.originLngCol;
+    const hasDestCoords = appState.destLatCol && appState.destLngCol;
+    
+    if (!appState.isValid || (!hasOriginCoords && !hasDestCoords)) {
+        const container = document.getElementById('map-container');
+        if (container) {
+            container.innerHTML = '<div class="tab-placeholder">Coordenadas no configuradas. Selecciona Origin Lat/Lng y/o Dest Lat/Lng en el header.</div>';
+        }
+        console.log('No se puede renderizar: falta configuración');
+        return;
+    }
+
+    // Extraer coordenadas
+    extractNodeCoordinates();
+    console.log('Coordenadas extraídas:', appState.nodeCoordinates.size);
+
+    if (appState.nodeCoordinates.size === 0) {
+        const container = document.getElementById('map-container');
+        if (container) {
+            container.innerHTML = '<div class="tab-placeholder">No hay coordenadas válidas en los datos. Verifica que las columnas contienen números.</div>';
+        }
+        console.log('No hay coordenadas válidas');
+        return;
+    }
+
+    const container = document.getElementById('map-container');
+    if (!container) {
+        console.error('map-container no encontrado');
+        return;
+    }
+
+    // Limpiar contenedor
+    container.innerHTML = '';
+
+    // Calcular centro del mapa (baricentro)
+    let totalLat = 0, totalLng = 0;
+    const coordsArray = Array.from(appState.nodeCoordinates.values());
+    coordsArray.forEach(coord => {
+        totalLat += coord.lat;
+        totalLng += coord.lng;
+    });
+    const centerLat = totalLat / coordsArray.length;
+    const centerLng = totalLng / coordsArray.length;
+
+    console.log('Centro del mapa:', { centerLat, centerLng });
+    console.log('Intentando crear mapa con L:', typeof L);
+
+    // Verificar si ya existe una instancia del mapa y destruirla
+    if (window.mapInstance) {
+        try {
+            window.mapInstance.remove();
+            console.log('Mapa anterior eliminado');
+        } catch (e) {
+            console.warn('Error al eliminar mapa anterior:', e);
+        }
+    }
+
+    // Crear mapa
+    const mapInstance = L.map(container).setView([centerLat, centerLng], 6);
+    console.log('Mapa creado:', mapInstance);
+
+    // Agregar capa de OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(mapInstance);
+    console.log('Capa de mapa agregada');
+
+    // Colores para los nodos
+    const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+    // Crear marcadores para cada nodo
+    const markers = [];
+    const nodeSize = {};
+
+    // Calcular tamaño de cada nodo basado en derivaciones
+    appState.uniqueNodes.forEach(nodeName => {
+        const outEdges = appState.outIndex.get(nodeName) || [];
+        const inEdges = appState.inIndex.get(nodeName) || [];
+        let totalDerivations = 0;
+        outEdges.forEach(e => totalDerivations += e.value);
+        inEdges.forEach(e => totalDerivations += e.value);
+        nodeSize[nodeName] = totalDerivations;
+    });
+
+    const maxSize = Math.max(...Object.values(nodeSize)) || 1;
+
+    // Crear marcadores
+    appState.nodeCoordinates.forEach((coords, nodeName) => {
+        const size = nodeSize[nodeName] || 0;
+        const radius = 5 + (size / maxSize) * 20; // Radio entre 5 y 25
+        const color = colorScale(nodeName);
+
+        const circle = L.circleMarker([coords.lat, coords.lng], {
+            radius: radius,
+            fillColor: color,
+            color: color,
+            weight: 2,
+            opacity: 0.8,
+            fillOpacity: 0.7
+        }).bindPopup(`<div><strong>${nodeName}</strong><br/>Referrals: ${size.toLocaleString()}</div>`);
+
+        circle.addTo(mapInstance);
+        markers.push({ nodeName, circle, coords });
+    });
+    console.log(`${markers.length} marcadores creados`);
+
+    // Dibujar aristas entre nodos
+    let edgesDrawn = 0;
+    const coloredEdges = new Map();
+    appState.aggregatedEdges.forEach((edge, idx) => {
+        const fromCoords = appState.nodeCoordinates.get(edge.source);
+        const toCoords = appState.nodeCoordinates.get(edge.target);
+
+        if (fromCoords && toCoords) {
+            edgesDrawn++;
+            const weight = edge.value || 1;
+            const color = colorScale(edge.source);
+            
+            // Escalar grosor entre 1 y 5
+            const maxWeight = Math.max(...appState.aggregatedEdges.map(e => e.value));
+            const lineWidth = 1 + (weight / maxWeight) * 4;
+
+            const polyline = L.polyline(
+                [[fromCoords.lat, fromCoords.lng], [toCoords.lat, toCoords.lng]],
+                {
+                    color: color,
+                    weight: lineWidth,
+                    opacity: 0.5,
+                    dashArray: '5, 5'
+                }
+            ).bindPopup(`<div>${edge.source} → ${edge.target}<br/>Referrals: ${weight.toLocaleString()}</div>`);
+
+            polyline.addTo(mapInstance);
+        }
+    });
+    console.log(`${edgesDrawn} aristas dibujadas de ${appState.aggregatedEdges.length} totales`);
+
+    // Actualizar estadísticas
+    const statsEl = document.getElementById('mapStats');
+    if (statsEl) {
+        const nodesWithCoords = appState.nodeCoordinates.size;
+        const edgesWithCoords = appState.aggregatedEdges.filter(e => 
+            appState.nodeCoordinates.has(e.source) && appState.nodeCoordinates.has(e.target)
+        ).length;
+        const totalEdges = appState.aggregatedEdges.length;
+        
+        statsEl.textContent = `Georeferenced: ${nodesWithCoords} nodes · ${edgesWithCoords}/${totalEdges} links`;
+    }
+
+    // Guardar referencia del mapa para uso posterior
+    window.mapInstance = mapInstance;
+
+    console.log(`✓ Mapa renderizado completo: ${markers.length} marcadores, ${edgesDrawn} aristas dibujadas`);
 }

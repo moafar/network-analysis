@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Referrals - Interactive Network</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Leaflet CSS para maps -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+</head>
 <body>
     <!-- HEADER -->
     <div class="header">
@@ -31,6 +34,34 @@
                     <option value="">-- Automatic --</option>
                 </select>
             </div>
+
+            <div class="control">
+                <label for="originLatCol">Origin Lat</label>
+                <select id="originLatCol" class="header-select">
+                    <option value="">-- Optional --</option>
+                </select>
+            </div>
+
+            <div class="control">
+                <label for="originLngCol">Origin Lng</label>
+                <select id="originLngCol" class="header-select">
+                    <option value="">-- Optional --</option>
+                </select>
+            </div>
+
+            <div class="control">
+                <label for="destLatCol">Dest Lat</label>
+                <select id="destLatCol" class="header-select">
+                    <option value="">-- Optional --</option>
+                </select>
+            </div>
+
+            <div class="control">
+                <label for="destLngCol">Dest Lng</label>
+                <select id="destLngCol" class="header-select">
+                    <option value="">-- Optional --</option>
+                </select>
+            </div>
         </div>
         <div class="header-info">
             <div id="statusMsg"></div>
@@ -47,6 +78,7 @@
             <button class="tab-btn active" data-tab="sankey">Sankey</button>
             <button class="tab-btn" data-tab="network">Gravitational Network</button>
             <button class="tab-btn" data-tab="ego">Ego Networks</button>
+            <button class="tab-btn" data-tab="map">Geographic Map</button>
         </div>
 
         <!-- VISUALIZATION TOOLBAR (controles dinámicos) -->
@@ -122,12 +154,20 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- TAB: GEOGRAPHIC MAP -->
+                <div id="tab-map" class="tab-pane">
+                    <div class="tab-pane-content">
+                        <div id="map-container" class="visualization-container"></div>
+                        <div id="mapStats" class="stats-bubble"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- ===== SCRIPTS ===== -->
-    <!-- XLSX Parser (lectura de Excel) - CDN alternativa más confiable -->
+    <!-- XLSX Parser (lectura de Excel) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     
     <!-- D3 y D3-Sankey -->
@@ -136,6 +176,9 @@
 
     <!-- Vis-Network -->
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+    <!-- Leaflet para mapas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <!-- APP STATE & LOGIC -->
     <script src="app.js"></script>
