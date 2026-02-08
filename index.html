@@ -9,70 +9,84 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
-    <!-- HEADER -->
-    <div class="header">
-        
-        <!-- Selectores de columnas EN EL HEADER -->
-        <div class="header-controls">
-            <div class="control">
-                <label for="originCol">Origin</label>
-                <select id="originCol" class="header-select">
-                    <option value="">-- Select --</option>
-                </select>
+    <div class="app-layout">
+        <!-- Botón para mostrar/ocultar panel lateral -->
+        <button id="headerToggleBtn" class="sidebar-toggle-btn" title="Show/hide controls">&#9776;</button>
+
+        <!-- SIDEBAR (antes header) -->
+        <aside class="sidebar-panel" id="mainHeader">
+            <div class="sidebar-section">
+                <h2 class="sidebar-title">Data Source</h2>
+                <div class="sidebar-file-info">
+                    <span class="file-name" id="fileName">File: (none)</span>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls">
+                    <button id="fileOpenBtn" class="btn btn-primary">Load Excel</button>
+                </div>
+                <div id="statusMsg" class="sidebar-status"></div>
             </div>
 
-            <div class="control">
-                <label for="destCol">Destination</label>
-                <select id="destCol" class="header-select">
-                    <option value="">-- Select --</option>
-                </select>
+            <div class="sidebar-section">
+                <h2 class="sidebar-title">Column Mapping</h2>
+                <div class="sidebar-controls">
+                    <div class="control">
+                        <label for="originCol">Origin</label>
+                        <select id="originCol" class="sidebar-select">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+
+                    <div class="control">
+                        <label for="destCol">Destination</label>
+                        <select id="destCol" class="sidebar-select">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+
+                    <div class="control">
+                        <label for="weightCol">Weight</label>
+                        <select id="weightCol" class="sidebar-select">
+                            <option value="">-- Automatic --</option>
+                        </select>
+                    </div>
+                </div>
             </div>
 
-            <div class="control">
-                <label for="weightCol">Weight</label>
-                <select id="weightCol" class="header-select">
-                    <option value="">-- Automatic --</option>
-                </select>
-            </div>
+            <div class="sidebar-section">
+                <h2 class="sidebar-title">Coordinates (optional)</h2>
+                <div class="sidebar-controls">
+                    <div class="control">
+                        <label for="originLatCol">Origin Lat</label>
+                        <select id="originLatCol" class="sidebar-select">
+                            <option value="">-- Optional --</option>
+                        </select>
+                    </div>
 
-            <div class="control">
-                <label for="originLatCol">Origin Lat</label>
-                <select id="originLatCol" class="header-select">
-                    <option value="">-- Optional --</option>
-                </select>
-            </div>
+                    <div class="control">
+                        <label for="originLngCol">Origin Lng</label>
+                        <select id="originLngCol" class="sidebar-select">
+                            <option value="">-- Optional --</option>
+                        </select>
+                    </div>
 
-            <div class="control">
-                <label for="originLngCol">Origin Lng</label>
-                <select id="originLngCol" class="header-select">
-                    <option value="">-- Optional --</option>
-                </select>
-            </div>
+                    <div class="control">
+                        <label for="destLatCol">Dest Lat</label>
+                        <select id="destLatCol" class="sidebar-select">
+                            <option value="">-- Optional --</option>
+                        </select>
+                    </div>
 
-            <div class="control">
-                <label for="destLatCol">Dest Lat</label>
-                <select id="destLatCol" class="header-select">
-                    <option value="">-- Optional --</option>
-                </select>
+                    <div class="control">
+                        <label for="destLngCol">Dest Lng</label>
+                        <select id="destLngCol" class="sidebar-select">
+                            <option value="">-- Optional --</option>
+                        </select>
+                    </div>
+                </div>
             </div>
+        </aside>
 
-            <div class="control">
-                <label for="destLngCol">Dest Lng</label>
-                <select id="destLngCol" class="header-select">
-                    <option value="">-- Optional --</option>
-                </select>
-            </div>
-        </div>
-        <div class="header-info">
-            <div id="statusMsg"></div>
-            <span class="file-name" id="fileName">File: (none)</span>
-            <input type="file" id="fileInput" accept=".xlsx,.xls">
-            <button id="fileOpenBtn" class="btn btn-primary">Load Excel</button>
-        </div>
-    </div>
-
-    <!-- MAIN CONTAINER (solo tabs) -->
-    <div class="container">
+        <!-- MAIN CONTAINER (tabs) -->
+        <div class="container">
         <!-- TABS HEADER -->
         <div class="tabs-header">
             <button class="tab-btn active" data-tab="sankey">Sankey</button>
@@ -164,7 +178,8 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div><!-- .container -->
+    </div><!-- .app-layout -->
 
     <!-- ===== SCRIPTS ===== -->
     <!-- XLSX Parser (lectura de Excel) -->

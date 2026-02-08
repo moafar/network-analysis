@@ -73,7 +73,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (typeof updateSankeyFilters === 'function') updateSankeyFilters();
             } else if (t.id === 'networkOriginFilter' || t.id === 'networkDestFilter') {
                 if (typeof updateNetworkFilters === 'function') updateNetworkFilters();
+            } else if (t.id === 'mapOriginFilter' || t.id === 'mapDestFilter') {
+                if (typeof updateMapFilters === 'function') updateMapFilters();
             }
+        });
+    }
+
+    // Sidebar toggle button
+    const headerToggleBtn = document.getElementById('headerToggleBtn');
+    if (headerToggleBtn) {
+        headerToggleBtn.addEventListener('click', () => {
+            const sidebar = document.getElementById('mainHeader');
+            if (!sidebar) return;
+            sidebar.classList.toggle('sidebar-hidden');
+            headerToggleBtn.classList.toggle('sidebar-visible');
+            // Invalidar tamaño del mapa tras mostrar/ocultar sidebar
+            setTimeout(() => {
+                if (window.mapInstance) window.mapInstance.invalidateSize();
+            }, 350);
         });
     }
 

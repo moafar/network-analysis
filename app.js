@@ -29,9 +29,13 @@ const appState = {
     networkTopN: 100,
     networkOriginFilter: '',
     networkDestFilter: '',
+    // Map
+    mapOriginFilter: '',
+    mapDestFilter: '',
     // cached stats to avoid resetting on tab switch
     sankeyStats: null,
     networkStats: null,
+    mapStats: null,
 };
 
 /**
@@ -499,7 +503,29 @@ function showTabControls(tabName) {
                 networkToolbarStatsEl.textContent = `Links: 0/${totalLinksInit} · Displayed weight: 0 / ${totalWeightInit.toLocaleString()}`;
             }
         }
-    } else if (tabName === 'ego' || tabName === 'map') {
+    } else if (tabName === 'map') {
+        toolbar.classList.remove('hidden');
+        toolbar.innerHTML = `
+            <div class="toolbar-group">
+                <label for="mapOriginFilter">Origin</label>
+                <select id="mapOriginFilter"><option value="">All</option></select>
+            </div>
+            <div class="toolbar-group">
+                <label for="mapDestFilter">Destination</label>
+                <select id="mapDestFilter"><option value="">All</option></select>
+            </div>
+            <div id="mapToolbarStats" class="toolbar-stats">Georeferenced: --</div>
+        `;
+        populateMapFilters();
+
+        if (appState.mapStats) {
+            const m = appState.mapStats;
+            const mapToolbarStatsEl = document.getElementById('mapToolbarStats');
+            if (mapToolbarStatsEl) {
+                mapToolbarStatsEl.textContent = `Georeferenced: ${m.nodes} nodes · ${m.displayedLinks}/${m.totalLinks} links`;
+            }
+        }
+    } else if (tabName === 'ego') {
         toolbar.classList.add('hidden');
         toolbar.innerHTML = '';
     } else {
@@ -1629,6 +1655,46 @@ function extractNodeCoordinates() {
 /**
  * Renderizar mapa geográfico con Leaflet
  */
+/**
+ * Poblar filtros del mapa con nodos únicos
+ */
+function populateMapFilters() {
+    const origins = new Set();
+    const dests = new Set();
+    appState.aggregatedEdges.forEach(e => {
+        origins.add(e.source);
+        dests.add(e.target);
+    });
+
+    const originSelect = document.getElementById('mapOriginFilter');
+    const destSelect = document.getElementById('mapDestFilter');
+
+    const sortedOrigins = Array.from(origins).sort();
+    const sortedDests = Array.from(dests).sort();
+
+    if (originSelect) {
+        const prev = appState.mapOriginFilter;
+        originSelect.innerHTML = '<option value="">All</option>' +
+            sortedOrigins.map(n => `<option value="${n}"${n === prev ? ' selected' : ''}>${n}</option>`).join('');
+    }
+    if (destSelect) {
+        const prev = appState.mapDestFilter;
+        destSelect.innerHTML = '<option value="">All</option>' +
+            sortedDests.map(n => `<option value="${n}"${n === prev ? ' selected' : ''}>${n}</option>`).join('');
+    }
+}
+
+/**
+ * Actualizar filtros del mapa y re-renderizar
+ */
+function updateMapFilters() {
+    const originEl = document.getElementById('mapOriginFilter');
+    const destEl = document.getElementById('mapDestFilter');
+    appState.mapOriginFilter = originEl ? originEl.value : '';
+    appState.mapDestFilter = destEl ? destEl.value : '';
+    renderMap();
+}
+
 function renderMap() {
     console.log('renderMap() llamado');
     console.log('Estado:', {
@@ -1701,36 +1767,57 @@ function renderMap() {
     const mapInstance = L.map(container).setView([centerLat, centerLng], 6);
     console.log('Mapa creado:', mapInstance);
 
-    // Agregar capa de OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19
+    // Capa CartoDB Positron: solo divisiones políticas, ciudades y geografía básica
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20
     }).addTo(mapInstance);
     console.log('Capa de mapa agregada');
 
     // Colores para los nodos
     const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
 
+    // Filtrar aristas según filtros del mapa
+    const originFilter = appState.mapOriginFilter;
+    const destFilter = appState.mapDestFilter;
+    let filteredEdges = appState.aggregatedEdges;
+    if (originFilter) {
+        filteredEdges = filteredEdges.filter(e => e.source === originFilter);
+    }
+    if (destFilter) {
+        filteredEdges = filteredEdges.filter(e => e.target === destFilter);
+    }
+
+    // Determinar nodos relevantes según las aristas filtradas
+    const relevantNodes = new Set();
+    filteredEdges.forEach(e => {
+        relevantNodes.add(e.source);
+        relevantNodes.add(e.target);
+    });
+
     // Crear marcadores para cada nodo
     const markers = [];
     const nodeSize = {};
 
-    // Calcular tamaño de cada nodo basado en derivaciones
-    appState.uniqueNodes.forEach(nodeName => {
-        const outEdges = appState.outIndex.get(nodeName) || [];
-        const inEdges = appState.inIndex.get(nodeName) || [];
+    // Calcular tamaño de cada nodo basado en aristas filtradas
+    relevantNodes.forEach(nodeName => {
         let totalDerivations = 0;
-        outEdges.forEach(e => totalDerivations += e.value);
-        inEdges.forEach(e => totalDerivations += e.value);
+        filteredEdges.forEach(e => {
+            if (e.source === nodeName) totalDerivations += e.value;
+            if (e.target === nodeName) totalDerivations += e.value;
+        });
         nodeSize[nodeName] = totalDerivations;
     });
 
-    const maxSize = Math.max(...Object.values(nodeSize)) || 1;
+    const maxSize = Math.max(...Object.values(nodeSize), 1);
 
-    // Crear marcadores
-    appState.nodeCoordinates.forEach((coords, nodeName) => {
+    // Crear marcadores solo para nodos relevantes con coordenadas
+    relevantNodes.forEach(nodeName => {
+        const coords = appState.nodeCoordinates.get(nodeName);
+        if (!coords) return;
         const size = nodeSize[nodeName] || 0;
-        const radius = 5 + (size / maxSize) * 20; // Radio entre 5 y 25
+        const radius = 5 + (size / maxSize) * 20;
         const color = colorScale(nodeName);
 
         const circle = L.circleMarker([coords.lat, coords.lng], {
@@ -1747,10 +1834,10 @@ function renderMap() {
     });
     console.log(`${markers.length} marcadores creados`);
 
-    // Dibujar aristas entre nodos
+    // Dibujar aristas filtradas entre nodos
     let edgesDrawn = 0;
-    const coloredEdges = new Map();
-    appState.aggregatedEdges.forEach((edge, idx) => {
+    const maxWeight = Math.max(...filteredEdges.map(e => e.value), 1);
+    filteredEdges.forEach((edge) => {
         const fromCoords = appState.nodeCoordinates.get(edge.source);
         const toCoords = appState.nodeCoordinates.get(edge.target);
 
@@ -1758,9 +1845,6 @@ function renderMap() {
             edgesDrawn++;
             const weight = edge.value || 1;
             const color = colorScale(edge.source);
-            
-            // Escalar grosor entre 1 y 5
-            const maxWeight = Math.max(...appState.aggregatedEdges.map(e => e.value));
             const lineWidth = 1 + (weight / maxWeight) * 4;
 
             const polyline = L.polyline(
@@ -1776,18 +1860,27 @@ function renderMap() {
             polyline.addTo(mapInstance);
         }
     });
-    console.log(`${edgesDrawn} aristas dibujadas de ${appState.aggregatedEdges.length} totales`);
+    console.log(`${edgesDrawn} aristas dibujadas de ${filteredEdges.length} filtradas (${appState.aggregatedEdges.length} totales)`);
 
     // Actualizar estadísticas
+    const totalEdges = appState.aggregatedEdges.length;
+    const displayedNodes = markers.length;
+    const displayedLinks = edgesDrawn;
+
+    appState.mapStats = { nodes: displayedNodes, displayedLinks, totalLinks: totalEdges };
+
+    const missingCoords = totalEdges - displayedLinks;
+    const missingText = missingCoords > 0 ? ` (${missingCoords} without coordinates)` : '';
+    const statsText = `Georeferenced: ${displayedNodes} nodes · ${displayedLinks}/${totalEdges} links${missingText}`;
+
     const statsEl = document.getElementById('mapStats');
     if (statsEl) {
-        const nodesWithCoords = appState.nodeCoordinates.size;
-        const edgesWithCoords = appState.aggregatedEdges.filter(e => 
-            appState.nodeCoordinates.has(e.source) && appState.nodeCoordinates.has(e.target)
-        ).length;
-        const totalEdges = appState.aggregatedEdges.length;
-        
-        statsEl.textContent = `Georeferenced: ${nodesWithCoords} nodes · ${edgesWithCoords}/${totalEdges} links`;
+        statsEl.textContent = statsText;
+    }
+
+    const mapToolbarStatsEl = document.getElementById('mapToolbarStats');
+    if (mapToolbarStatsEl) {
+        mapToolbarStatsEl.textContent = statsText;
     }
 
     // Guardar referencia del mapa para uso posterior
