@@ -1626,6 +1626,8 @@ function extractNodeCoordinates() {
     }
 
     appState.nodeCoordinates.clear();
+    appState.nodesWithOriginCoords = new Set();
+    appState.nodesWithDestCoords = new Set();
 
     // Crear mapa de coordenadas por nodo
     let coordsExtraidas = 0;
@@ -1638,9 +1640,12 @@ function extractNodeCoordinates() {
             const originLat = parseFloat(row[appState.originLatCol]);
             const originLng = parseFloat(row[appState.originLngCol]);
             if (idx < 3) console.log(`Fila ${idx} origen:`, originNode, originLat, originLng);
-            if (!isNaN(originLat) && !isNaN(originLng) && !appState.nodeCoordinates.has(originNode)) {
-                appState.nodeCoordinates.set(originNode, { lat: originLat, lng: originLng });
-                coordsExtraidas++;
+            if (!isNaN(originLat) && !isNaN(originLng)) {
+                appState.nodesWithOriginCoords.add(originNode);
+                if (!appState.nodeCoordinates.has(originNode)) {
+                    appState.nodeCoordinates.set(originNode, { lat: originLat, lng: originLng });
+                    coordsExtraidas++;
+                }
             }
         }
 
@@ -1649,9 +1654,12 @@ function extractNodeCoordinates() {
             const destLat = parseFloat(row[appState.destLatCol]);
             const destLng = parseFloat(row[appState.destLngCol]);
             if (idx < 3) console.log(`Fila ${idx} destino:`, destNode, destLat, destLng);
-            if (!isNaN(destLat) && !isNaN(destLng) && !appState.nodeCoordinates.has(destNode)) {
-                appState.nodeCoordinates.set(destNode, { lat: destLat, lng: destLng });
-                coordsExtraidas++;
+            if (!isNaN(destLat) && !isNaN(destLng)) {
+                appState.nodesWithDestCoords.add(destNode);
+                if (!appState.nodeCoordinates.has(destNode)) {
+                    appState.nodeCoordinates.set(destNode, { lat: destLat, lng: destLng });
+                    coordsExtraidas++;
+                }
             }
         }
     });
@@ -1886,13 +1894,17 @@ function renderMap() {
     });
 
     // ---- Dibujar aristas PRIMERO (quedan debajo de los nodos) ----
+    // Solo dibujar si el source tiene coords de origen Y el target tiene coords de destino
+    const srcHasOwnCoords = appState.nodesWithOriginCoords || new Set();
+    const tgtHasOwnCoords = appState.nodesWithDestCoords || new Set();
     let edgesDrawn = 0;
     const maxWeight = Math.max(...filteredEdges.map(e => e.value), 1);
     filteredEdges.forEach((edge) => {
         const fromCoords = appState.nodeCoordinates.get(edge.source);
         const toCoords = appState.nodeCoordinates.get(edge.target);
 
-        if (fromCoords && toCoords) {
+        // Requiere que el source tenga coords como origen y el target como destino
+        if (fromCoords && toCoords && srcHasOwnCoords.has(edge.source) && tgtHasOwnCoords.has(edge.target)) {
             edgesDrawn++;
             const weight = edge.value || 1;
             const color = colorScale(edge.source);
