@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (typeof updateSankeyFilters === 'function') updateSankeyFilters();
             } else if (t.id === 'networkOriginFilter' || t.id === 'networkDestFilter') {
                 if (typeof updateNetworkFilters === 'function') updateNetworkFilters();
-            } else if (t.id === 'mapOriginFilter' || t.id === 'mapDestFilter') {
+            } else if (t.id === 'mapOriginFilter' || t.id === 'mapDestFilter' || t.id === 'mapColorCol') {
                 if (typeof updateMapFilters === 'function') updateMapFilters();
             }
         });

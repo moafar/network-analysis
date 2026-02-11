@@ -32,6 +32,8 @@ const appState = {
     // Map
     mapOriginFilter: '',
     mapDestFilter: '',
+    mapColorCol: '',
+    mapLegendFilter: '',
     // cached stats to avoid resetting on tab switch
     sankeyStats: null,
     networkStats: null,
@@ -514,9 +516,14 @@ function showTabControls(tabName) {
                 <label for="mapDestFilter">Destination</label>
                 <select id="mapDestFilter"><option value="">All</option></select>
             </div>
+            <div class="toolbar-group">
+                <label for="mapColorCol">Color by</label>
+                <select id="mapColorCol"><option value="">-- None --</option></select>
+            </div>
             <div id="mapToolbarStats" class="toolbar-stats">Georeferenced: --</div>
         `;
         populateMapFilters();
+        populateMapColorSelector();
 
         if (appState.mapStats) {
             const m = appState.mapStats;
@@ -1685,13 +1692,27 @@ function populateMapFilters() {
 }
 
 /**
+ * Poblar el selector de Color by con las columnas del dataset
+ */
+function populateMapColorSelector() {
+    const colorSelect = document.getElementById('mapColorCol');
+    if (!colorSelect) return;
+    const prev = appState.mapColorCol;
+    colorSelect.innerHTML = '<option value="">-- None --</option>' +
+        appState.headers.map(h => `<option value="${h}"${h === prev ? ' selected' : ''}>${h}</option>`).join('');
+}
+
+/**
  * Actualizar filtros del mapa y re-renderizar
  */
 function updateMapFilters() {
     const originEl = document.getElementById('mapOriginFilter');
     const destEl = document.getElementById('mapDestFilter');
+    const colorEl = document.getElementById('mapColorCol');
     appState.mapOriginFilter = originEl ? originEl.value : '';
     appState.mapDestFilter = destEl ? destEl.value : '';
+    appState.mapColorCol = colorEl ? colorEl.value : '';
+    appState.mapLegendFilter = ''; // reset legend filter on any toolbar change
     renderMap();
 }
 
@@ -1763,8 +1784,10 @@ function renderMap() {
         }
     }
 
-    // Crear mapa
-    const mapInstance = L.map(container).setView([centerLat, centerLng], 6);
+    // Crear mapa ajustado a los puntos
+    const mapInstance = L.map(container);
+    const bounds = L.latLngBounds(coordsArray.map(c => [c.lat, c.lng]));
+    mapInstance.fitBounds(bounds, { padding: [30, 30] });
     console.log('Mapa creado:', mapInstance);
 
     // Capa CartoDB Positron: solo divisiones políticas, ciudades y geografía básica
@@ -1775,8 +1798,36 @@ function renderMap() {
     }).addTo(mapInstance);
     console.log('Capa de mapa agregada');
 
-    // Colores para los nodos
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+    // ---- Color-by-field logic ----
+    const colorCol = appState.mapColorCol;
+    let nodeColorMap = null;
+    let colorGroups = [];
+    const colorPalette = [
+        '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
+        '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
+        '#dcbeff', '#9A6324', '#800000', '#aaffc3', '#808000',
+        '#ffd8b1', '#000075', '#a9a9a9', '#ffe119', '#000000'
+    ];
+    let colorScale;
+
+    if (colorCol) {
+        nodeColorMap = new Map();
+        appState.rows.forEach(row => {
+            const originNode = String(row[appState.originCol] ?? '').trim();
+            const destNode = String(row[appState.destCol] ?? '').trim();
+            const val = String(row[colorCol] ?? '').trim();
+            if (originNode && !nodeColorMap.has(originNode)) nodeColorMap.set(originNode, val);
+            if (destNode && !nodeColorMap.has(destNode)) nodeColorMap.set(destNode, val);
+        });
+        colorGroups = Array.from(new Set(nodeColorMap.values())).sort();
+        const groupColorScale = d3.scaleOrdinal()
+            .domain(colorGroups)
+            .range(colorPalette.slice(0, Math.max(colorGroups.length, 1)));
+        colorScale = (nodeName) => groupColorScale(nodeColorMap.get(nodeName) || '');
+    } else {
+        const defaultScale = d3.scaleOrdinal(d3.schemeCategory10);
+        colorScale = (nodeName) => defaultScale(nodeName);
+    }
 
     // Filtrar aristas según filtros del mapa
     const originFilter = appState.mapOriginFilter;
@@ -1789,12 +1840,24 @@ function renderMap() {
         filteredEdges = filteredEdges.filter(e => e.target === destFilter);
     }
 
+    // Filtrar por grupo de leyenda (color-by field)
+    const legendFilter = appState.mapLegendFilter;
+    if (legendFilter && nodeColorMap) {
+        filteredEdges = filteredEdges.filter(e => {
+            const srcGroup = nodeColorMap.get(e.source) || '';
+            const tgtGroup = nodeColorMap.get(e.target) || '';
+            return srcGroup === legendFilter || tgtGroup === legendFilter;
+        });
+    }
+
     // Determinar nodos relevantes según las aristas filtradas
-    const relevantNodes = new Set();
+    const originNodes = new Set();
+    const destNodes = new Set();
     filteredEdges.forEach(e => {
-        relevantNodes.add(e.source);
-        relevantNodes.add(e.target);
+        originNodes.add(e.source);
+        destNodes.add(e.target);
     });
+    const relevantNodes = new Set([...originNodes, ...destNodes]);
 
     // Crear marcadores para cada nodo
     const markers = [];
@@ -1812,29 +1875,17 @@ function renderMap() {
 
     const maxSize = Math.max(...Object.values(nodeSize), 1);
 
-    // Crear marcadores solo para nodos relevantes con coordenadas
-    relevantNodes.forEach(nodeName => {
-        const coords = appState.nodeCoordinates.get(nodeName);
-        if (!coords) return;
-        const size = nodeSize[nodeName] || 0;
-        const radius = 5 + (size / maxSize) * 20;
-        const color = colorScale(nodeName);
-
-        const circle = L.circleMarker([coords.lat, coords.lng], {
-            radius: radius,
-            fillColor: color,
-            color: color,
-            weight: 2,
-            opacity: 0.8,
-            fillOpacity: 0.7
-        }).bindPopup(`<div><strong>${nodeName}</strong><br/>Referrals: ${size.toLocaleString()}</div>`);
-
-        circle.addTo(mapInstance);
-        markers.push({ nodeName, circle, coords });
+    // Índice rápido de aristas salientes por origen y entrantes por destino
+    const outEdgesBySource = new Map();
+    const inEdgesByTarget = new Map();
+    filteredEdges.forEach(e => {
+        if (!outEdgesBySource.has(e.source)) outEdgesBySource.set(e.source, []);
+        outEdgesBySource.get(e.source).push(e);
+        if (!inEdgesByTarget.has(e.target)) inEdgesByTarget.set(e.target, []);
+        inEdgesByTarget.get(e.target).push(e);
     });
-    console.log(`${markers.length} marcadores creados`);
 
-    // Dibujar aristas filtradas entre nodos
+    // ---- Dibujar aristas PRIMERO (quedan debajo de los nodos) ----
     let edgesDrawn = 0;
     const maxWeight = Math.max(...filteredEdges.map(e => e.value), 1);
     filteredEdges.forEach((edge) => {
@@ -1845,22 +1896,95 @@ function renderMap() {
             edgesDrawn++;
             const weight = edge.value || 1;
             const color = colorScale(edge.source);
-            const lineWidth = 1 + (weight / maxWeight) * 4;
+            const lineWidth = 4 + (weight / maxWeight) * 36;
+            const pts = [[fromCoords.lat, fromCoords.lng], [toCoords.lat, toCoords.lng]];
+            const popupContent = `<div>${edge.source} → ${edge.target}<br/>Referrals: ${weight.toLocaleString()}</div>`;
 
-            const polyline = L.polyline(
-                [[fromCoords.lat, fromCoords.lng], [toCoords.lat, toCoords.lng]],
-                {
-                    color: color,
-                    weight: lineWidth,
-                    opacity: 0.5,
-                    dashArray: '5, 5'
-                }
-            ).bindPopup(`<div>${edge.source} → ${edge.target}<br/>Referrals: ${weight.toLocaleString()}</div>`);
+            // Hitbox invisible (mínimo 18px) para facilitar la interacción
+            L.polyline(pts, { weight: Math.max(lineWidth, 18), opacity: 0, interactive: true })
+                .bindPopup(popupContent).addTo(mapInstance);
 
-            polyline.addTo(mapInstance);
+            // Línea visible
+            L.polyline(pts, { color, weight: lineWidth, opacity: 0.5, dashArray: '5, 5', interactive: false })
+                .addTo(mapInstance);
         }
     });
     console.log(`${edgesDrawn} aristas dibujadas de ${filteredEdges.length} filtradas (${appState.aggregatedEdges.length} totales)`);
+
+    // ---- Dibujar nodos DESPUÉS (quedan encima, reciben clics prioritariamente) ----
+    // Crear marcadores: Círculo=origen, Cuadrado=destino, Diamante=ambos
+    relevantNodes.forEach(nodeName => {
+        const coords = appState.nodeCoordinates.get(nodeName);
+        if (!coords) return;
+        const size = nodeSize[nodeName] || 0;
+        const radius = 5 + (size / maxSize) * 20;
+        const color = colorScale(nodeName);
+        const isOrigin = originNodes.has(nodeName);
+        const isDest = destNodes.has(nodeName);
+
+        // Popup con desglose
+        let popupHtml = '';
+        const outEdges = outEdgesBySource.get(nodeName);
+        const inEdges = inEdgesByTarget.get(nodeName);
+
+        // Sección de envíos (si es origen)
+        if (outEdges && outEdges.length > 0) {
+            const sorted = outEdges.slice().sort((a, b) => b.value - a.value);
+            const totalSent = sorted.reduce((s, e) => s + e.value, 0);
+            const rows = sorted.map(e => {
+                const pct = totalSent > 0 ? ((e.value / totalSent) * 100).toFixed(1) : '0.0';
+                return `<tr><td style="padding:1px 6px 1px 0">${e.target}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td><td style="text-align:right;color:#888">${pct}%</td></tr>`;
+            }).join('');
+            popupHtml += `<div><strong>${nodeName}</strong><br/>Total sent: ${totalSent.toLocaleString()}</div>` +
+                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Dest</th><th style="text-align:right;padding-right:6px">Weight</th><th style="text-align:right">%</th></tr>${rows}</table>`;
+        }
+
+        // Sección de recepciones (si es destino)
+        if (inEdges && inEdges.length > 0) {
+            const sorted = inEdges.slice().sort((a, b) => b.value - a.value);
+            const totalRecv = sorted.reduce((s, e) => s + e.value, 0);
+            const rows = sorted.map(e => {
+                const pct = totalRecv > 0 ? ((e.value / totalRecv) * 100).toFixed(1) : '0.0';
+                return `<tr><td style="padding:1px 6px 1px 0">${e.source}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td><td style="text-align:right;color:#888">${pct}%</td></tr>`;
+            }).join('');
+            if (popupHtml) popupHtml += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
+            else popupHtml += `<div><strong>${nodeName}</strong></div>`;
+            popupHtml += `<div style="margin-top:2px;">Total received: ${totalRecv.toLocaleString()}</div>` +
+                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Origin</th><th style="text-align:right;padding-right:6px">Weight</th><th style="text-align:right">%</th></tr>${rows}</table>`;
+        }
+
+        if (!popupHtml) {
+            popupHtml = `<div><strong>${nodeName}</strong><br/>Referrals: ${size.toLocaleString()}</div>`;
+        }
+
+        let marker;
+        if (isOrigin && isDest) {
+            // Diamante
+            const d = radius * 2;
+            const svg = `<svg width="${d}" height="${d}" viewBox="0 0 ${d} ${d}" xmlns="http://www.w3.org/2000/svg">` +
+                `<polygon points="${d/2},0 ${d},${d/2} ${d/2},${d} 0,${d/2}" fill="${color}" fill-opacity="0.7" stroke="${color}" stroke-width="2" stroke-opacity="0.8"/>` +
+                `</svg>`;
+            const icon = L.divIcon({ html: svg, className: '', iconSize: [d, d], iconAnchor: [d/2, d/2], popupAnchor: [0, -d/2] });
+            marker = L.marker([coords.lat, coords.lng], { icon }).bindPopup(popupHtml, { maxHeight: 300 });
+        } else if (isDest) {
+            // Cuadrado
+            const d = radius * 2;
+            const svg = `<svg width="${d}" height="${d}" xmlns="http://www.w3.org/2000/svg">` +
+                `<rect x="1" y="1" width="${d-2}" height="${d-2}" rx="2" fill="${color}" fill-opacity="0.7" stroke="${color}" stroke-width="2" stroke-opacity="0.8"/>` +
+                `</svg>`;
+            const icon = L.divIcon({ html: svg, className: '', iconSize: [d, d], iconAnchor: [d/2, d/2], popupAnchor: [0, -d/2] });
+            marker = L.marker([coords.lat, coords.lng], { icon }).bindPopup(popupHtml, { maxHeight: 300 });
+        } else {
+            // Origen = círculo
+            marker = L.circleMarker([coords.lat, coords.lng], {
+                radius: radius, fillColor: color, color: color, weight: 2, opacity: 0.8, fillOpacity: 0.7
+            }).bindPopup(popupHtml, { maxHeight: 300 });
+        }
+
+        marker.addTo(mapInstance);
+        markers.push({ nodeName, marker, coords });
+    });
+    console.log(`${markers.length} marcadores creados`);
 
     // Actualizar estadísticas
     const totalEdges = appState.aggregatedEdges.length;
@@ -1882,6 +2006,71 @@ function renderMap() {
     if (mapToolbarStatsEl) {
         mapToolbarStatsEl.textContent = statsText;
     }
+
+    // ---- Color legend (interactive) ----
+    if (colorCol && colorGroups.length > 0) {
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function () {
+            const div = L.DomUtil.create('div', 'map-color-legend');
+            div.style.cssText = 'background:white; padding:8px 12px; border-radius:6px; box-shadow:0 1px 5px rgba(0,0,0,.3); font-size:12px; max-height:260px; overflow-y:auto;';
+            const titleRow = document.createElement('div');
+            titleRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
+            titleRow.innerHTML = `<span style="font-weight:600;">${colorCol}</span>` +
+                (legendFilter ? '<span class="map-legend-clear" style="cursor:pointer;font-size:10px;color:#999;margin-left:8px;" title="Clear filter">✕ clear</span>' : '');
+            div.appendChild(titleRow);
+
+            const dummyScale = d3.scaleOrdinal().domain(colorGroups).range(colorPalette.slice(0, Math.max(colorGroups.length, 1)));
+            colorGroups.forEach(g => {
+                const c = dummyScale(g);
+                const label = g || '(empty)';
+                const isActive = legendFilter === g;
+                const opacity = legendFilter && !isActive ? '0.35' : '1';
+                const row = document.createElement('div');
+                row.style.cssText = `display:flex;align-items:center;gap:6px;margin:2px 0;cursor:pointer;opacity:${opacity};`;
+                if (isActive) row.style.fontWeight = '700';
+                row.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${c};flex-shrink:0;"></span><span>${label}</span>`;
+                row.addEventListener('click', (ev) => {
+                    L.DomEvent.stopPropagation(ev);
+                    appState.mapLegendFilter = isActive ? '' : g;
+                    renderMap();
+                });
+                div.appendChild(row);
+            });
+
+            const clearBtn = div.querySelector('.map-legend-clear');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', (ev) => {
+                    L.DomEvent.stopPropagation(ev);
+                    appState.mapLegendFilter = '';
+                    renderMap();
+                });
+            }
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            return div;
+        };
+        legend.addTo(mapInstance);
+    }
+
+    // ---- Shape legend ----
+    const shapeLegend = L.control({ position: 'bottomleft' });
+    shapeLegend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'map-shape-legend');
+        div.style.cssText = 'background:white; padding:8px 12px; border-radius:6px; box-shadow:0 1px 5px rgba(0,0,0,.3); font-size:12px;';
+        div.innerHTML =
+            '<div style="font-weight:600; margin-bottom:4px;">Node type</div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">' +
+                '<svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#888" fill-opacity="0.7" stroke="#888" stroke-width="1.5"/></svg>' +
+                '<span>Origin</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">' +
+                '<svg width="14" height="14"><rect x="1" y="1" width="12" height="12" rx="2" fill="#888" fill-opacity="0.7" stroke="#888" stroke-width="1.5"/></svg>' +
+                '<span>Destination</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">' +
+                '<svg width="14" height="14"><polygon points="7,0 14,7 7,14 0,7" fill="#888" fill-opacity="0.7" stroke="#888" stroke-width="1.5"/></svg>' +
+                '<span>Both</span></div>';
+        return div;
+    };
+    shapeLegend.addTo(mapInstance);
 
     // Guardar referencia del mapa para uso posterior
     window.mapInstance = mapInstance;
