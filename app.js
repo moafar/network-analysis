@@ -1872,36 +1872,6 @@ function renderMap() {
     });
     const relevantNodes = new Set([...originNodes, ...destNodes]);
 
-    // Crear marcadores para cada nodo
-    const markers = [];
-    const nodeSize = {};
-
-    // Calcular tamaño de cada nodo basado en aristas filtradas
-    relevantNodes.forEach(nodeName => {
-        let totalDerivations = 0;
-        filteredEdges.forEach(e => {
-            if (e.source === nodeName) totalDerivations += e.value;
-            if (e.target === nodeName) totalDerivations += e.value;
-        });
-        nodeSize[nodeName] = totalDerivations;
-    });
-
-    const maxSize = Math.max(...Object.values(nodeSize), 1);
-
-    // Índice rápido de aristas salientes por origen y entrantes por destino
-    const outEdgesBySource = new Map();
-    const inEdgesByTarget = new Map();
-    filteredEdges.forEach(e => {
-        if (!outEdgesBySource.has(e.source)) outEdgesBySource.set(e.source, []);
-        outEdgesBySource.get(e.source).push(e);
-        if (!inEdgesByTarget.has(e.target)) inEdgesByTarget.set(e.target, []);
-        inEdgesByTarget.get(e.target).push(e);
-    });
-
-    // ---- Dibujar aristas PRIMERO (quedan debajo de los nodos) ----
-    // Solo dibujar si el source tiene coords de origen Y el target tiene coords de destino
-    const srcHasOwnCoords = appState.nodesWithOriginCoords || new Set();
-    const tgtHasOwnCoords = appState.nodesWithDestCoords || new Set();
     // ---- Compute edge metric (weight or cost) ----
     function haversineDist(lat1, lng1, lat2, lng2) {
         const R = 6371; // km
@@ -1926,6 +1896,43 @@ function renderMap() {
         edgeMetric.set(`${edge.source}|${edge.target}`, metric);
     });
     const maxMetric = Math.max(...edgeMetric.values(), 1);
+
+    // Crear marcadores para cada nodo
+    const markers = [];
+    const nodeSize = {};
+
+    // Calcular tamaño de cada nodo basado en aristas filtradas
+    // En modo cost: suma de (distancia × peso) de las aristas conectadas
+    relevantNodes.forEach(nodeName => {
+        let total = 0;
+        filteredEdges.forEach(e => {
+            if (e.source === nodeName || e.target === nodeName) {
+                if (useCost) {
+                    total += edgeMetric.get(`${e.source}|${e.target}`) || e.value;
+                } else {
+                    total += e.value;
+                }
+            }
+        });
+        nodeSize[nodeName] = total;
+    });
+
+    const maxSize = Math.max(...Object.values(nodeSize), 1);
+
+    // Índice rápido de aristas salientes por origen y entrantes por destino
+    const outEdgesBySource = new Map();
+    const inEdgesByTarget = new Map();
+    filteredEdges.forEach(e => {
+        if (!outEdgesBySource.has(e.source)) outEdgesBySource.set(e.source, []);
+        outEdgesBySource.get(e.source).push(e);
+        if (!inEdgesByTarget.has(e.target)) inEdgesByTarget.set(e.target, []);
+        inEdgesByTarget.get(e.target).push(e);
+    });
+
+    // ---- Dibujar aristas PRIMERO (quedan debajo de los nodos) ----
+    // Solo dibujar si el source tiene coords de origen Y el target tiene coords de destino
+    const srcHasOwnCoords = appState.nodesWithOriginCoords || new Set();
+    const tgtHasOwnCoords = appState.nodesWithDestCoords || new Set();
 
     let edgesDrawn = 0;
     const maxWeight = Math.max(...filteredEdges.map(e => e.value), 1);
@@ -1979,26 +1986,36 @@ function renderMap() {
         if (outEdges && outEdges.length > 0) {
             const sorted = outEdges.slice().sort((a, b) => b.value - a.value);
             const totalSent = sorted.reduce((s, e) => s + e.value, 0);
+            const costHeader = useCost ? '<th style="text-align:right;padding-right:6px">Cost</th>' : '';
             const rows = sorted.map(e => {
                 const pct = totalSent > 0 ? ((e.value / totalSent) * 100).toFixed(1) : '0.0';
-                return `<tr><td style="padding:1px 6px 1px 0">${e.target}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td><td style="text-align:right;color:#888">${pct}%</td></tr>`;
+                const edgeCost = edgeMetric.get(e.source + '|' + e.target) || 0;
+                const costCell = useCost ? `<td style="text-align:right;padding-right:6px">${edgeCost.toLocaleString(undefined, {maximumFractionDigits: 1})}</td>` : '';
+                return `<tr><td style="padding:1px 6px 1px 0">${e.target}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td>${costCell}<td style="text-align:right;color:#888">${pct}%</td></tr>`;
             }).join('');
-            popupHtml += `<div><strong>${nodeName}</strong><br/>Total sent: ${totalSent.toLocaleString()}</div>` +
-                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Dest</th><th style="text-align:right;padding-right:6px">Weight</th><th style="text-align:right">%</th></tr>${rows}</table>`;
+            const totalCostSent = useCost ? sorted.reduce((s, e) => s + (edgeMetric.get(`${e.source}|${e.target}`) || 0), 0) : 0;
+            const costSentLine = useCost ? ` · Cost sent: ${totalCostSent.toLocaleString(undefined, {maximumFractionDigits: 1})}` : '';
+            popupHtml += `<div><strong>${nodeName}</strong><br/>Total sent: ${totalSent.toLocaleString()}${costSentLine}</div>` +
+                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Dest</th><th style="text-align:right;padding-right:6px">Weight</th>${costHeader}<th style="text-align:right">%</th></tr>${rows}</table>`;
         }
 
         // Sección de recepciones (si es destino)
         if (inEdges && inEdges.length > 0) {
             const sorted = inEdges.slice().sort((a, b) => b.value - a.value);
             const totalRecv = sorted.reduce((s, e) => s + e.value, 0);
+            const costHeader = useCost ? '<th style="text-align:right;padding-right:6px">Cost</th>' : '';
             const rows = sorted.map(e => {
                 const pct = totalRecv > 0 ? ((e.value / totalRecv) * 100).toFixed(1) : '0.0';
-                return `<tr><td style="padding:1px 6px 1px 0">${e.source}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td><td style="text-align:right;color:#888">${pct}%</td></tr>`;
+                const edgeCost = edgeMetric.get(e.source + '|' + e.target) || 0;
+                const costCell = useCost ? `<td style="text-align:right;padding-right:6px">${edgeCost.toLocaleString(undefined, {maximumFractionDigits: 1})}</td>` : '';
+                return `<tr><td style="padding:1px 6px 1px 0">${e.source}</td><td style="text-align:right;padding-right:6px">${e.value.toLocaleString()}</td>${costCell}<td style="text-align:right;color:#888">${pct}%</td></tr>`;
             }).join('');
             if (popupHtml) popupHtml += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
             else popupHtml += `<div><strong>${nodeName}</strong></div>`;
-            popupHtml += `<div style="margin-top:2px;">Total received: ${totalRecv.toLocaleString()}</div>` +
-                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Origin</th><th style="text-align:right;padding-right:6px">Weight</th><th style="text-align:right">%</th></tr>${rows}</table>`;
+            const totalCostRecv = useCost ? sorted.reduce((s, e) => s + (edgeMetric.get(`${e.source}|${e.target}`) || 0), 0) : 0;
+            const costRecvLine = useCost ? ` · Cost received: ${totalCostRecv.toLocaleString(undefined, {maximumFractionDigits: 1})}` : '';
+            popupHtml += `<div style="margin-top:2px;">Total received: ${totalRecv.toLocaleString()}${costRecvLine}</div>` +
+                `<table style="margin-top:4px;font-size:11px;border-collapse:collapse"><tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:1px 6px 1px 0">Origin</th><th style="text-align:right;padding-right:6px">Weight</th>${costHeader}<th style="text-align:right">%</th></tr>${rows}</table>`;
         }
 
         if (!popupHtml) {
