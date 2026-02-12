@@ -180,6 +180,16 @@ body, html {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+.btn-active {
+    background: #667eea;
+    color: white;
+    box-shadow: 0 0 0 2px #667eea44;
+}
+
+.btn-active:hover {
+    background: #5a6fd6;
+}
+
 /* ===== MAIN CONTAINER ===== */
 .container {
     display: flex;

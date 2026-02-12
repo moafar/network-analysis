@@ -39,6 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
         toolbar.addEventListener('click', (e) => {
             const btn = e.target.closest('button');
             if (!btn) return;
+
+            // Cost toggle (no data-action, identified by id)
+            if (btn.id === 'mapCostToggle') {
+                if (typeof toggleMapCostMode === 'function') toggleMapCostMode();
+                return;
+            }
+
             const action = btn.dataset.action;
             if (!action) return;
 

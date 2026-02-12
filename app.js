@@ -34,6 +34,7 @@ const appState = {
     mapDestFilter: '',
     mapColorCol: '',
     mapLegendFilter: '',
+    mapCostMode: false,
     // cached stats to avoid resetting on tab switch
     sankeyStats: null,
     networkStats: null,
@@ -273,6 +274,8 @@ function handleColumnChange() {
             console.log('Intentando renderizar mapa con coordenadas:', {
                 originLatCol, originLngCol, destLatCol, destLngCol
             });
+            // Destroy existing map so it recreates with fitBounds
+            if (window.mapInstance) { try { window.mapInstance.remove(); } catch(e){} window.mapInstance = null; }
             renderMap();
         }
     } else {
@@ -283,6 +286,8 @@ function handleColumnChange() {
     if (appState.aggregatedEdges.length > 0 && 
         ((originLatCol && originLngCol) || (destLatCol && destLngCol))) {
         console.log('Actualizando solo el mapa con nuevas coordenadas');
+        // Destroy existing map so it recreates with fitBounds
+        if (window.mapInstance) { try { window.mapInstance.remove(); } catch(e){} window.mapInstance = null; }
         renderMap();
     }
 }
@@ -519,6 +524,9 @@ function showTabControls(tabName) {
             <div class="toolbar-group">
                 <label for="mapColorCol">Color by</label>
                 <select id="mapColorCol"><option value="">-- None --</option></select>
+            </div>
+            <div class="toolbar-group">
+                <button id="mapCostToggle" class="btn${appState.mapCostMode ? ' btn-active' : ''}" title="Line width = distance × weight">Cost</button>
             </div>
             <div id="mapToolbarStats" class="toolbar-stats">Georeferenced: --</div>
         `;
@@ -1724,6 +1732,16 @@ function updateMapFilters() {
     renderMap();
 }
 
+/**
+ * Toggle cost mode on the map (line width = distance × weight)
+ */
+function toggleMapCostMode() {
+    appState.mapCostMode = !appState.mapCostMode;
+    const btn = document.getElementById('mapCostToggle');
+    if (btn) btn.classList.toggle('btn-active', appState.mapCostMode);
+    renderMap();
+}
+
 function renderMap() {
     console.log('renderMap() llamado');
     console.log('Estado:', {
@@ -1766,45 +1784,32 @@ function renderMap() {
         return;
     }
 
-    // Limpiar contenedor
-    container.innerHTML = '';
-
-    // Calcular centro del mapa (baricentro)
-    let totalLat = 0, totalLng = 0;
     const coordsArray = Array.from(appState.nodeCoordinates.values());
-    coordsArray.forEach(coord => {
-        totalLat += coord.lat;
-        totalLng += coord.lng;
-    });
-    const centerLat = totalLat / coordsArray.length;
-    const centerLng = totalLng / coordsArray.length;
 
-    console.log('Centro del mapa:', { centerLat, centerLng });
-    console.log('Intentando crear mapa con L:', typeof L);
-
-    // Verificar si ya existe una instancia del mapa y destruirla
-    if (window.mapInstance) {
-        try {
-            window.mapInstance.remove();
-            console.log('Mapa anterior eliminado');
-        } catch (e) {
-            console.warn('Error al eliminar mapa anterior:', e);
-        }
+    // Reuse existing map instance to preserve view; create only when needed
+    let mapInstance = window.mapInstance;
+    if (mapInstance) {
+        // Remove all overlay layers (markers, polylines, controls) but keep the tile layer
+        mapInstance.eachLayer(layer => {
+            if (!(layer instanceof L.TileLayer)) mapInstance.removeLayer(layer);
+        });
+        // Remove custom controls (legends)
+        if (window._mapLegendControl) { try { mapInstance.removeControl(window._mapLegendControl); } catch(e){} window._mapLegendControl = null; }
+        if (window._mapShapeLegend) { try { mapInstance.removeControl(window._mapShapeLegend); } catch(e){} window._mapShapeLegend = null; }
+        console.log('Mapa reutilizado (vista preservada)');
+    } else {
+        // First render: create map from scratch
+        container.innerHTML = '';
+        mapInstance = L.map(container);
+        const bounds = L.latLngBounds(coordsArray.map(c => [c.lat, c.lng]));
+        mapInstance.fitBounds(bounds, { padding: [30, 30] });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(mapInstance);
+        console.log('Mapa creado con fitBounds');
     }
-
-    // Crear mapa ajustado a los puntos
-    const mapInstance = L.map(container);
-    const bounds = L.latLngBounds(coordsArray.map(c => [c.lat, c.lng]));
-    mapInstance.fitBounds(bounds, { padding: [30, 30] });
-    console.log('Mapa creado:', mapInstance);
-
-    // Capa CartoDB Positron: solo divisiones políticas, ciudades y geografía básica
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
-    }).addTo(mapInstance);
-    console.log('Capa de mapa agregada');
 
     // ---- Color-by-field logic ----
     const colorCol = appState.mapColorCol;
@@ -1897,6 +1902,31 @@ function renderMap() {
     // Solo dibujar si el source tiene coords de origen Y el target tiene coords de destino
     const srcHasOwnCoords = appState.nodesWithOriginCoords || new Set();
     const tgtHasOwnCoords = appState.nodesWithDestCoords || new Set();
+    // ---- Compute edge metric (weight or cost) ----
+    function haversineDist(lat1, lng1, lat2, lng2) {
+        const R = 6371; // km
+        const toRad = v => v * Math.PI / 180;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    const useCost = appState.mapCostMode;
+    const edgeMetric = new Map(); // key: "source|target" -> metric value
+    filteredEdges.forEach(edge => {
+        const from = appState.nodeCoordinates.get(edge.source);
+        const to = appState.nodeCoordinates.get(edge.target);
+        let metric = edge.value || 1;
+        if (useCost && from && to) {
+            const dist = haversineDist(from.lat, from.lng, to.lat, to.lng);
+            metric = dist * (edge.value || 1);
+        }
+        edgeMetric.set(`${edge.source}|${edge.target}`, metric);
+    });
+    const maxMetric = Math.max(...edgeMetric.values(), 1);
+
     let edgesDrawn = 0;
     const maxWeight = Math.max(...filteredEdges.map(e => e.value), 1);
     filteredEdges.forEach((edge) => {
@@ -1908,9 +1938,15 @@ function renderMap() {
             edgesDrawn++;
             const weight = edge.value || 1;
             const color = colorScale(edge.source);
-            const lineWidth = 4 + (weight / maxWeight) * 36;
+            const metric = edgeMetric.get(`${edge.source}|${edge.target}`) || weight;
+            const lineWidth = useCost
+                ? 2 + (metric / maxMetric) * 38
+                : 4 + (weight / maxWeight) * 36;
             const pts = [[fromCoords.lat, fromCoords.lng], [toCoords.lat, toCoords.lng]];
-            const popupContent = `<div>${edge.source} → ${edge.target}<br/>Referrals: ${weight.toLocaleString()}</div>`;
+            const dist = haversineDist(fromCoords.lat, fromCoords.lng, toCoords.lat, toCoords.lng);
+            const distInfo = `<br/>Distance: ${dist.toLocaleString(undefined, {maximumFractionDigits: 1})} km`;
+            const costInfo = useCost ? `<br/>Cost (dist×wt): ${metric.toLocaleString(undefined, {maximumFractionDigits: 1})}` : '';
+            const popupContent = `<div>${edge.source} → ${edge.target}<br/>Referrals: ${weight.toLocaleString()}${distInfo}${costInfo}</div>`;
 
             // Hitbox invisible (mínimo 18px) para facilitar la interacción
             L.polyline(pts, { weight: Math.max(lineWidth, 18), opacity: 0, interactive: true })
@@ -2062,6 +2098,7 @@ function renderMap() {
             return div;
         };
         legend.addTo(mapInstance);
+        window._mapLegendControl = legend;
     }
 
     // ---- Shape legend ----
@@ -2082,6 +2119,7 @@ function renderMap() {
                 '<span>Both</span></div>';
         return div;
     };
+    window._mapShapeLegend = shapeLegend;
     shapeLegend.addTo(mapInstance);
 
     // Guardar referencia del mapa para uso posterior

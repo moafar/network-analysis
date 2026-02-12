@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-02-12
+
+### Geographic Map — Cost metric & view preservation
+
+- **Cost mode toggle**: new "Cost" button in the map toolbar. When active, each edge's line width is proportional to *distance × weight* (Haversine distance in km multiplied by the edge weight), enabling spatial-cost analysis at a glance.
+- **Distance in edge tooltips**: edge popups now always show the Haversine distance (km) between origin and destination. When cost mode is active, the computed cost value is also displayed.
+- **View preservation on re-render**: toggling cost mode, changing filters (origin, destination, color-by), or clicking legend items no longer resets the map zoom and center. The existing Leaflet instance is reused and only overlay layers are redrawn.
+- **Full map recreation on coordinate changes**: selecting different coordinate columns destroys and recreates the map with `fitBounds`, correctly adjusting the extent to the new data.
+
 ## 2026-02-11
 
 ### Geographic Map — New features and fixes
