@@ -1856,11 +1856,25 @@ function renderMap() {
     // Filtrar por grupo de leyenda (color-by field)
     const legendFilter = appState.mapLegendFilter;
     if (legendFilter && nodeColorMap) {
-        filteredEdges = filteredEdges.filter(e => {
-            const srcGroup = nodeColorMap.get(e.source) || '';
-            const tgtGroup = nodeColorMap.get(e.target) || '';
-            return srcGroup === legendFilter || tgtGroup === legendFilter;
-        });
+        // Nodos que pertenecen al grupo seleccionado (normalmente destinos agrupados)
+        const groupNodes = new Set(Array.from(nodeColorMap.entries()).filter(([n, g]) => g === legendFilter).map(([n]) => n));
+
+        // Mostrar solo aristas cuyo TARGET pertenezca al grupo seleccionado —
+        // así el usuario ve la red que alimenta a ese destino/agrupación.
+        filteredEdges = filteredEdges.filter(e => groupNodes.has(e.target));
+
+        // Orígenes conectados a ese grupo (se mostrarán aunque no pertenezcan al grupo)
+        const connectedOrigins = new Set(filteredEdges.map(e => e.source));
+
+        // Forzar el color de todos los nodos mostrados (destinos + orígenes conectados)
+        // al color del grupo seleccionado para que la vista represente "la red de ese destino".
+        const dummyScale = d3.scaleOrdinal().domain(colorGroups).range(colorPalette.slice(0, Math.max(colorGroups.length, 1)));
+        const forcedColor = dummyScale(legendFilter);
+        const originalColorScale = colorScale;
+        colorScale = (nodeName) => {
+            if (groupNodes.has(nodeName) || connectedOrigins.has(nodeName)) return forcedColor;
+            return originalColorScale(nodeName);
+        };
     }
 
     // Determinar nodos relevantes según las aristas filtradas

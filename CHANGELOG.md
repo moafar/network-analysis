@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-02-20
+
+### Geographic Map — Legend filter behavior
+
+- **Legend selection now focuses on destination group**: clicking a color in the map legend filters the map to show only edges whose *target* (destination) belongs to the selected group. This makes the view represent "the network feeding that destination group".
+- **Consistent group coloring when focused**: when a legend group is active, all displayed nodes (the matched destinations and their connected origins) are rendered using the selected group's color so the user clearly sees the network for that destination.
+- **Rationale**: previously the filter kept edges when either endpoint matched the group (OR logic), which left other-colored nodes visible and caused confusion. The new behavior matches the expected "focus on destination group" UX.
+
 ## 2026-02-12
 
 ### Geographic Map — Cost metric & view preservation
